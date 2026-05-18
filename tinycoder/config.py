@@ -25,6 +25,7 @@ class TinyCoderSettings(TypedDict, total=False):
 
 
 class RuntimeConfig(TypedDict, total=False):
+    provider: str
     model: str
     baseUrl: str
     authToken: str
@@ -140,10 +141,35 @@ async def save_tinycoder_settings(updates: TinyCoderSettings) -> None:
 async def load_runtime_config() -> RuntimeConfig:
     effective = await load_effective_settings()
     env = {**{str(k): str(v) for k, v in (effective.get("env") or {}).items()}, **os.environ}
-    model = (os.environ.get("TINYCODER_MODEL") or effective.get("model") or env.get("ANTHROPIC_MODEL") or "").strip()
-    base_url = (env.get("ANTHROPIC_BASE_URL") or "").strip() or "https://api.anthropic.com"
-    auth_token = (env.get("ANTHROPIC_AUTH_TOKEN") or "").strip()
-    api_key = (env.get("ANTHROPIC_API_KEY") or "").strip()
+    provider = (
+        env.get("TINYCODER_MODEL_PROVIDER")
+        or env.get("MODEL_PROVIDER")
+        or "anthropic"
+    ).strip().lower()
+
+    if provider in {"qwen", "dashscope", "aliyun"}:
+        model = (
+            os.environ.get("TINYCODER_MODEL")
+            or effective.get("model")
+            or env.get("DASHSCOPE_MODEL")
+            or env.get("QWEN_MODEL")
+            or "qwen-plus"
+        ).strip()
+        base_url = (
+            env.get("DASHSCOPE_BASE_URL")
+            or env.get("QWEN_BASE_URL")
+            or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        ).strip().rstrip("/")
+        auth_token = (env.get("DASHSCOPE_AUTH_TOKEN") or env.get("QWEN_AUTH_TOKEN") or "").strip()
+        api_key = (env.get("DASHSCOPE_API_KEY") or env.get("QWEN_API_KEY") or "").strip()
+    elif provider == "anthropic":
+        model = (os.environ.get("TINYCODER_MODEL") or effective.get("model") or env.get("ANTHROPIC_MODEL") or "").strip()
+        base_url = (env.get("ANTHROPIC_BASE_URL") or "").strip() or "https://api.anthropic.com"
+        auth_token = (env.get("ANTHROPIC_AUTH_TOKEN") or "").strip()
+        api_key = (env.get("ANTHROPIC_API_KEY") or "").strip()
+    else:
+        raise RuntimeError(f"Unsupported model provider: {provider}. Use anthropic or qwen.")
+
     raw_max = os.environ.get("TINYCODER_MAX_OUTPUT_TOKENS", effective.get("maxOutputTokens") or env.get("TINYCODER_MAX_OUTPUT_TOKENS"))
     max_out: int | None = None
     try:
@@ -154,10 +180,11 @@ async def load_runtime_config() -> RuntimeConfig:
     except (TypeError, ValueError):
         max_out = None
     if not model:
-        raise RuntimeError("No model configured. Set ~/.tinycoder/settings.json or env.ANTHROPIC_MODEL.")
+        raise RuntimeError("No model configured. Set ~/.tinycoder/settings.json or a provider-specific model env variable.")
     if not auth_token and not api_key:
-        raise RuntimeError("No auth configured. Set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY in ~/.tinycoder/settings.json or process env.")
+        raise RuntimeError("No auth configured. Set ANTHROPIC_API_KEY or DASHSCOPE_API_KEY in ~/.tinycoder/settings.json or process env.")
     result: RuntimeConfig = {
+        "provider": provider,
         "model": model,
         "baseUrl": base_url,
         "mcpServers": effective.get("mcpServers") or {},

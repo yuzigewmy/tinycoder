@@ -14,6 +14,7 @@ from .config import load_runtime_config
 from .manage_cli import maybe_handle_management_command
 from .mcp_status import summarize_mcp_servers
 from .mock_model import MockModelAdapter
+from .qwen_adapter import QwenModelAdapter
 from .permissions import PermissionManager
 from .prompt import build_system_prompt
 from .session import fork_session
@@ -62,7 +63,12 @@ async def main(argv: list[str] | None = None) -> None:
 
     permissions = PermissionManager(cwd)
     await permissions.when_ready()
-    model = MockModelAdapter() if os.environ.get("TINYCODER_MODEL_MODE") == "mock" or runtime is None else AnthropicModelAdapter(tools, load_runtime_config)
+    if os.environ.get("TINYCODER_MODEL_MODE") == "mock" or runtime is None:
+        model = MockModelAdapter()
+    elif (runtime.get("provider") or "anthropic") in {"qwen", "dashscope", "aliyun"}:
+        model = QwenModelAdapter(tools, load_runtime_config)
+    else:
+        model = AnthropicModelAdapter(tools, load_runtime_config)
     messages: list[dict[str, Any]] = [{"role": "system", "content": await build_system_prompt(cwd, permissions.get_summary(), {"skills": tools.get_skills(), "mcpServers": tools.get_mcp_servers()})}]
     content_replacement_state = create_content_replacement_state()
     context_collapse_state = create_context_collapse_state()

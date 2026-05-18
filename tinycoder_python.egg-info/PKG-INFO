@@ -1,0 +1,555 @@
+Metadata-Version: 2.4
+Name: tinycoder-python
+Version: 0.1.0
+Summary: TinyCoder terminal AI coding assistant.
+Author: TinyCoder
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
+# TinyCoder Python
+
+TinyCoder Python 是一个运行在终端中的 AI 编程 Agent。它可以读取和修改本地项目文件、执行受控命令、检索文本、应用补丁、管理会话，并通过 MCP 与 Skills 扩展外部工具能力。项目采用 Python 实现，适合用于代码辅助开发、项目分析、批量文件处理、命令行自动化和本地 Agent 工作流实验。
+
+---
+
+## 主要特性
+
+- **终端交互式编程 Agent**：在命令行中持续对话，围绕当前工作目录理解和处理项目。
+- **文件工具能力**：支持读取、写入、修改、精确替换、批量 patch、目录浏览和全文搜索。
+- **命令执行能力**：可在权限控制下运行本地开发命令，例如测试、构建、格式化、脚本执行等。
+- **Anthropic Messages API 支持**：可接入 Anthropic 兼容模型接口。
+- **Mock 模式**：无需配置 API key 即可测试 CLI、工具调用和基础交互流程。
+- **权限控制**：对文件修改、命令执行、路径访问等高风险操作进行审批和持久化记录。
+- **会话管理**：支持保存、恢复、重命名、分叉和清理会话。
+- **上下文压缩**：支持手动压缩、自动压缩、上下文折叠和安全裁剪，降低长会话上下文压力。
+- **MCP 扩展**：支持 stdio、content-length、newline-json、streamable-http 等 MCP 服务接入方式。
+- **Skills 扩展**：支持从用户级或项目级目录加载 `SKILL.md` 工作流能力。
+- **Python 原生 TUI/REPL**：提供轻量终端界面和斜杠命令系统。
+
+---
+
+## 环境要求
+
+- Python >= 3.10
+- 推荐使用虚拟环境
+- 如需真实模型调用，需要配置 Anthropic API key 或兼容认证信息
+
+检查 Python 版本：
+
+```bash
+python3 --version
+```
+
+---
+
+## 安装方式
+
+进入项目根目录后执行：
+
+```bash
+pip install -e .
+```
+
+安装完成后可以使用：
+
+```bash
+tinycoder --help
+```
+
+也可以不安装，直接通过模块方式运行：
+
+```bash
+python3 -m tinycoder --help
+```
+
+---
+
+## 快速启动
+
+### 1. 使用 Mock 模式启动
+
+Mock 模式不需要 API key，适合检查项目是否可运行：
+
+```bash
+TINYCODER_MODEL_MODE=mock python3 -m tinycoder
+```
+
+或者安装后运行：
+
+```bash
+TINYCODER_MODEL_MODE=mock tinycoder
+```
+
+进入交互界面后，可以输入：
+
+```text
+/help
+/tools
+/ls
+/read README.md
+/exit
+```
+
+### 2. 使用真实模型启动
+
+设置环境变量：
+
+```bash
+export ANTHROPIC_API_KEY="your_api_key_here"
+export ANTHROPIC_MODEL="claude-3-5-sonnet-latest"
+```
+
+然后启动：
+
+```bash
+python3 -m tinycoder
+```
+
+或者：
+
+```bash
+tinycoder
+```
+
+---
+
+## 配置说明
+
+TinyCoder Python 会读取以下配置来源：
+
+```text
+~/.tinycoder/settings.json
+~/.tinycoder/mcp.json
+当前项目/.mcp.json
+环境变量
+```
+
+可选配置示例：
+
+```json
+{
+  "model": "claude-3-5-sonnet-latest",
+  "maxOutputTokens": 4096,
+  "env": {
+    "ANTHROPIC_API_KEY": "your_api_key_here"
+  },
+  "mcpServers": {}
+}
+```
+
+常用环境变量：
+
+| 变量名 | 说明 |
+|---|---|
+| `TINYCODER_MODEL_MODE` | 设置为 `mock` 时启用 Mock 模式 |
+| `TINYCODER_MODEL` | 指定模型名称，优先级高于配置文件 |
+| `ANTHROPIC_MODEL` | Anthropic 模型名称 |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `ANTHROPIC_AUTH_TOKEN` | 兼容接口的 Bearer token |
+| `ANTHROPIC_BASE_URL` | 自定义 Anthropic 兼容接口地址 |
+| `TINYCODER_MAX_OUTPUT_TOKENS` | 最大输出 token 数 |
+| `TINYCODER_HOME` | 自定义 TinyCoder 数据目录，默认 `~/.tinycoder` |
+
+查看当前配置状态：
+
+```text
+/status
+/config-paths
+/model
+```
+
+设置模型：
+
+```text
+/model claude-3-5-sonnet-latest
+```
+
+---
+
+## 常用斜杠命令
+
+| 命令 | 说明 |
+|---|---|
+| `/help` | 查看可用命令 |
+| `/tools` | 查看 Agent 当前可用工具 |
+| `/status` | 查看模型、接口和配置来源 |
+| `/model` | 查看当前模型 |
+| `/model <model-name>` | 持久化设置模型 |
+| `/config-paths` | 查看配置文件路径 |
+| `/skills` | 查看已发现的 Skills |
+| `/mcp` | 查看 MCP 服务状态 |
+| `/resume` | 恢复历史会话 |
+| `/rename <name>` | 重命名当前会话 |
+| `/new` | 开始新会话 |
+| `/fork` | 从当前会话分叉出新会话 |
+| `/permissions` | 查看权限存储路径 |
+| `/exit` | 退出程序 |
+
+---
+
+## 本地文件与命令工具
+
+TinyCoder Python 提供了一组本地工具快捷命令：
+
+| 命令 | 说明 |
+|---|---|
+| `/ls [path]` | 查看目录文件 |
+| `/grep <pattern>::[path]` | 在指定路径下搜索文本 |
+| `/read <path>` | 读取文件内容 |
+| `/write <path>::<content>` | 写入文件内容 |
+| `/modify <path>::<content>` | 替换文件内容，并展示可审查 diff |
+| `/edit <path>::<search>::<replace>` | 对文件进行精确替换 |
+| `/patch <path>::<search1>::<replace1>::...` | 对一个文件执行多段替换 |
+| `/cmd [cwd::]<command> [args...]` | 执行受控开发命令 |
+
+示例：
+
+```text
+/ls tinycoder
+/read pyproject.toml
+/grep class::tinycoder
+/edit README.md::旧内容::新内容
+/cmd python3 -m compileall -q tinycoder
+```
+
+---
+
+## 会话管理
+
+程序会将会话数据保存到 TinyCoder 数据目录中。默认位置：
+
+```text
+~/.tinycoder/projects/
+```
+
+常见操作：
+
+```bash
+tinycoder --resume
+tinycoder --resume <session-id>
+tinycoder --fork <session-id>
+```
+
+在交互界面中也可以使用：
+
+```text
+/resume
+/rename 项目重构会话
+/new
+/fork
+```
+
+---
+
+## 权限机制
+
+TinyCoder Python 会对潜在高风险操作进行权限管理，例如：
+
+- 修改文件
+- 写入新文件
+- 执行本地命令
+- 访问受限路径
+- 调用外部扩展工具
+
+权限记录默认保存到：
+
+```text
+~/.tinycoder/permissions.json
+```
+
+查看权限文件路径：
+
+```text
+/permissions
+```
+
+建议不要将本地权限文件提交到代码仓库。
+
+---
+
+## 上下文压缩
+
+长会话可能会消耗较大的上下文窗口。TinyCoder Python 提供多种压缩方式：
+
+| 命令 | 说明 |
+|---|---|
+| `/compact` | 手动压缩上下文 |
+| `/collapse` | 将安全的历史上下文折叠为摘要 |
+| `/snip` | 裁剪安全的中间上下文片段 |
+
+这些操作用于降低上下文体积，同时尽量保留关键任务信息和执行轨迹。
+
+---
+
+## MCP 管理
+
+TinyCoder Python 支持 MCP 服务配置与管理。
+
+### 查看 MCP 服务
+
+```bash
+tinycoder mcp list
+```
+
+查看项目级 MCP 服务：
+
+```bash
+tinycoder mcp list --project
+```
+
+### 添加本地 MCP 服务
+
+```bash
+tinycoder mcp add my-server -- python3 path/to/server.py
+```
+
+添加到项目级配置：
+
+```bash
+tinycoder mcp add my-server --project -- python3 path/to/server.py
+```
+
+### 添加 HTTP MCP 服务
+
+```bash
+tinycoder mcp add remote-server --protocol streamable-http --url https://example.com/mcp
+```
+
+### 添加环境变量或请求头
+
+```bash
+tinycoder mcp add my-server --env API_KEY=xxx -- python3 server.py
+```
+
+```bash
+tinycoder mcp add remote-server --protocol streamable-http --url https://example.com/mcp --header Authorization=Bearer_xxx
+```
+
+### 登录和退出
+
+```bash
+tinycoder mcp login my-server --token your_token
+tinycoder mcp logout my-server
+```
+
+### 删除 MCP 服务
+
+```bash
+tinycoder mcp remove my-server
+```
+
+项目级删除：
+
+```bash
+tinycoder mcp remove my-server --project
+```
+
+---
+
+## Skills 管理
+
+Skills 是可复用的工作流说明，通常以 `SKILL.md` 作为入口。
+
+TinyCoder Python 会从以下位置发现 Skills：
+
+```text
+~/.tinycoder/skills/<skill-name>/SKILL.md
+当前项目/.tinycoder/skills/<skill-name>/SKILL.md
+~/.claude/skills/<skill-name>/SKILL.md
+当前项目/.claude/skills/<skill-name>/SKILL.md
+```
+
+### 查看 Skills
+
+```bash
+tinycoder skills list
+```
+
+### 安装 Skill
+
+用户级安装：
+
+```bash
+tinycoder skills add path/to/skill-dir --name my-skill
+```
+
+项目级安装：
+
+```bash
+tinycoder skills add path/to/skill-dir --name my-skill --project
+```
+
+### 删除 Skill
+
+```bash
+tinycoder skills remove my-skill
+```
+
+项目级删除：
+
+```bash
+tinycoder skills remove my-skill --project
+```
+
+---
+
+## 项目结构
+
+```text
+.
+├── bin/                    # 可执行脚本入口
+├── docs/                   # 静态文档与资源
+├── tinycoder/               # 主程序包
+│   ├── agent_loop.py       # Agent 主循环
+│   ├── anthropic_adapter.py# Anthropic 模型适配器
+│   ├── cli_commands.py     # 斜杠命令
+│   ├── compact/            # 上下文压缩与折叠
+│   ├── config.py           # 配置读取与合并
+│   ├── mcp.py              # MCP 客户端与工具封装
+│   ├── permissions.py      # 权限系统
+│   ├── session.py          # 会话保存与恢复
+│   ├── skills.py           # Skills 发现和管理
+│   ├── tools/              # Agent 本地工具集合
+│   ├── tui/                # 终端界面组件
+│   └── utils/              # 通用工具函数
+├── tests/                  # 测试目录
+├── LICENSE                 # 开源协议
+├── pyproject.toml          # Python 项目配置
+└── README.md               # 项目说明文档
+```
+
+---
+
+## 开发与验证
+
+### 安装为可编辑模式
+
+```bash
+pip install -e .
+```
+
+### 语法检查
+
+```bash
+python3 -m compileall -q tinycoder
+```
+
+### Mock 模式验证
+
+```bash
+TINYCODER_MODEL_MODE=mock python3 -m tinycoder --help
+```
+
+### 运行交互程序
+
+```bash
+TINYCODER_MODEL_MODE=mock python3 -m tinycoder
+```
+
+---
+
+## 安全建议
+
+- 不要提交真实 API key、token、cookie、私钥或本地配置文件。
+- 建议将 `.env`、`~/.tinycoder/`、`.mcp.json` 中的敏感字段排除在 Git 之外。
+- 执行 `/cmd` 前确认命令影响范围，尤其是删除、覆盖、发布、部署类命令。
+- 使用项目级 MCP 配置时，避免将私密 header 或 token 直接写入仓库。
+
+推荐 `.gitignore` 至少包含：
+
+```gitignore
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.coverage
+.env
+.env.*
+!.env.example
+.tinycoder/
+.mcp-tokens.json
+*.log
+.DS_Store
+.idea/
+.vscode/
+```
+
+---
+
+## 常见问题
+
+### 1. 启动时报错：No model configured
+
+需要设置模型名称。可以使用环境变量：
+
+```bash
+export ANTHROPIC_MODEL="claude-3-5-sonnet-latest"
+```
+
+也可以在交互界面中执行：
+
+```text
+/model claude-3-5-sonnet-latest
+```
+
+### 2. 启动时报错：No auth configured
+
+需要设置 API key 或认证 token：
+
+```bash
+export ANTHROPIC_API_KEY="your_api_key_here"
+```
+
+或者使用 Mock 模式验证本地功能：
+
+```bash
+TINYCODER_MODEL_MODE=mock python3 -m tinycoder
+```
+
+### 3. MCP 服务没有加载
+
+先检查配置：
+
+```bash
+tinycoder mcp list
+tinycoder mcp list --project
+```
+
+然后在交互界面中执行：
+
+```text
+/mcp
+```
+
+### 4. Skill 没有被发现
+
+确认目录结构中存在 `SKILL.md`：
+
+```text
+~/.tinycoder/skills/my-skill/SKILL.md
+```
+
+或：
+
+```text
+当前项目/.tinycoder/skills/my-skill/SKILL.md
+```
+
+然后执行：
+
+```bash
+tinycoder skills list
+```
+
+---
+
+## 许可证
+
+本项目使用 MIT License。详见 `LICENSE` 文件。

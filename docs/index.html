@@ -4,8 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title data-i18n="page_title">MiniCode | AI-powered terminal coding assistant</title>
-  <meta name="description" content="MiniCode is a lightweight terminal coding assistant for local development workflows. Model-tool-loop, secure approvals, resumable sessions, snip compact, context collapse, Skills & MCP.">
+  <title data-i18n="page_title">TinyCoder | AI-powered terminal coding assistant</title>
+  <meta name="description" content="TinyCoder is a lightweight terminal coding assistant for local development workflows. Model-tool-loop, secure approvals, resumable sessions, snip compact, context collapse, Skills & MCP.">
   
   <!-- Typography: Editorial Serif + Clean Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -616,14 +616,14 @@
   <nav class="navbar" id="navbar">
     <div class="container" style="display: flex; justify-content: space-between; align-items: center; gap: 48px;">
       <div class="brand" style="flex-shrink: 0;">
-        <img src="./logo.svg" alt="MiniCode Logo" style="width: 24px; height: 24px; border-radius: 4px;" />
-        MiniCode
+        <img src="./logo.svg" alt="TinyCoder Logo" style="width: 24px; height: 24px; border-radius: 4px;" />
+        TinyCoder
       </div>
       <div class="nav-links">
         <a href="#features" data-i18n="nav_features">Features</a>
         <a href="#architecture" data-i18n="nav_arch">Architecture</a>
         <button id="langToggle" class="lang-toggle">EN / 中</button>
-        <a href="https://github.com/LiuMengxuan04/MiniCode" target="_blank" class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.85rem;" data-i18n="nav_github">GitHub</a>
+        <a href="https://github.com/LiuMengxuan04/TinyCoder" target="_blank" class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.85rem;" data-i18n="nav_github">GitHub</a>
       </div>
     </div>
   </nav>
@@ -640,19 +640,19 @@
         built for <em>developers</em>
       </h1>
       <p class="fade-up delay-200" data-i18n="hero_desc">
-        Work with large language models directly in your terminal. Build, debug, and ship with an execution loop that keeps you in control. Describe what you need, and MiniCode handles the tools.
+        Work with large language models directly in your terminal. Build, debug, and ship with an execution loop that keeps you in control. Describe what you need, and TinyCoder handles the tools.
       </p>
       <div class="hero-actions fade-up delay-300">
-        <a class="btn btn-primary" href="https://github.com/LiuMengxuan04/MiniCode" target="_blank" data-i18n="btn_github">
+        <a class="btn btn-primary" href="https://github.com/LiuMengxuan04/TinyCoder" target="_blank" data-i18n="btn_github">
           View on GitHub
         </a>
-        <a id="btn_readme" class="btn btn-secondary" href="https://github.com/LiuMengxuan04/MiniCode/blob/main/README.md" target="_blank" data-i18n="btn_readme">
+        <a id="btn_readme" class="btn btn-secondary" href="https://github.com/LiuMengxuan04/TinyCoder/blob/main/README.md" target="_blank" data-i18n="btn_readme">
           Read Documentation
         </a>
-        <a class="btn btn-secondary" href="https://github.com/harkerhand/MiniCode-rs/tree/master" target="_blank" data-i18n="btn_rust">
+        <a class="btn btn-secondary" href="https://github.com/harkerhand/TinyCoder-rs/tree/master" target="_blank" data-i18n="btn_rust">
           Rust Version
         </a>
-        <a class="btn btn-secondary" href="https://github.com/QUSETIONS/MiniCode-Python" target="_blank" data-i18n="btn_python">
+        <a class="btn btn-secondary" href="https://github.com/QUSETIONS/TinyCoder-Python" target="_blank" data-i18n="btn_python">
           Python Version
         </a>
       </div>
@@ -667,11 +667,11 @@
         <!-- Top Panel: Header -->
         <div class="t-panel">
           <div class="t-panel-title">api.minimaxi.com</div>
-          <div class="t-header-title">MiniCode</div>
+          <div class="t-header-title">TinyCoder</div>
           <div class="t-header-desc" data-i18n="t_header_desc">Terminal coding assistant with a card-style session layout.</div>
           
           <div class="t-stats-line">
-            <span class="t-stats-label">mini-code</span> <span class="t-stats-value">~/code/mini-code</span>
+            <span class="t-stats-label">tinycoder</span> <span class="t-stats-value">~/code/tinycoder</span>
             <span class="t-stats-label">[session]</span> <span class="t-stats-value">a7c9e2b1</span>
             <span class="t-stats-label">[provider]</span> <span class="t-stats-value">api.minimaxi.com</span>
             <span class="t-stats-label">[model]</span> <span class="t-stats-value">MiniMax-M2.7</span>
@@ -681,7 +681,7 @@
             <span class="t-stats-label">[skills]</span> <span class="t-stats-value green">13</span>
             <span class="t-stats-label">[mcp]</span> <span class="t-stats-value">1</span>
           </div>
-          <div class="t-cwd">cwd: ~/code/mini-code | extra allowed dirs: ~/code/claude-code, ~/cod...</div>
+          <div class="t-cwd">cwd: ~/code/tinycoder | extra allowed dirs: ~/code/claude-code, ~/cod...</div>
         </div>
 
         <!-- Middle Panel: Session Feed -->
@@ -691,7 +691,7 @@
           <div class="t-message" style="color: #5c7080;">.</div>
           
           <div class="t-role" data-i18n="t_role">assistant</div>
-          <div class="t-message" data-i18n="t_hello" data-html="true">Hello! 👋<br><br>I'm mini-code, your terminal coding assistant. I can help you with:</div>
+          <div class="t-message" data-i18n="t_hello" data-html="true">Hello! 👋<br><br>I'm tinycoder, your terminal coding assistant. I can help you with:</div>
           <ul class="t-list">
             <li><span class="t-list-icon">🔍</span> <span data-i18n="t_l1">Inspecting code and repositories</span></li>
             <li><span class="t-list-icon">📝</span> <span data-i18n="t_l2">Editing files with review-before-write approvals</span></li>
@@ -710,7 +710,7 @@
             <strong>prompt</strong> Enter send | /help commands | Esc clear | Ctrl+C exit
           </div>
           <div class="t-input-line">
-            <span class="t-input-prompt">mini-code&gt;</span>
+            <span class="t-input-prompt">tinycoder&gt;</span>
             <span style="color: #8b949e;" data-i18n="t_input">Ask for code, files, tasks, or MCP tools</span><span class="t-input-cursor"></span>
           </div>
         </div>
@@ -739,7 +739,7 @@
       </div>
     </div>
 
-    <!-- Why MiniCode Section -->
+    <!-- Why TinyCoder Section -->
     <section id="why" class="container" style="padding-top: 0; padding-bottom: 80px;">
       <div style="background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: 56px; box-shadow: var(--shadow-md); position: relative; overflow: hidden;">
         <!-- Decorative Background Circle -->
@@ -748,7 +748,7 @@
         <div style="position: relative; z-index: 1;">
           <h2 data-i18n="why_title" style="font-family: var(--font-serif); font-size: 2.2rem; font-weight: 400; margin-bottom: 20px; color: var(--text-primary);">Inspired by Claude Code</h2>
           <p data-i18n="why_desc" style="font-size: 1.05rem; color: var(--text-secondary); margin-bottom: 40px; line-height: 1.7; max-width: 640px;">
-            MiniCode is designed as an architectural reference implementation. It intentionally strips away bloated platform features to focus entirely on the core AI-developer interaction loop. It is the perfect fit if you are looking for:
+            TinyCoder is designed as an architectural reference implementation. It intentionally strips away bloated platform features to focus entirely on the core AI-developer interaction loop. It is the perfect fit if you are looking for:
           </p>
           
           <div class="grid" style="row-gap: 32px;">
@@ -787,7 +787,7 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           </div>
           <h3 data-i18n="feat_1_title">Core execution loop</h3>
-          <p data-i18n="feat_1_desc" data-html="true">MiniCode manages a full multi-step tool execution loop (<code>model -> tool -> model</code>) in a single turn, providing seamless context processing without leaving the terminal.</p>
+          <p data-i18n="feat_1_desc" data-html="true">TinyCoder manages a full multi-step tool execution loop (<code>model -> tool -> model</code>) in a single turn, providing seamless context processing without leaving the terminal.</p>
           <ul class="feature-list">
             <li data-i18n="feat_1_l1">Full-screen TUI with transcript scrolling</li>
             <li data-i18n="feat_1_l2">Separation of progress and final answers</li>
@@ -800,7 +800,7 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           </div>
           <h3 data-i18n="feat_2_title">You're in control</h3>
-          <p data-i18n="feat_2_desc">Safety shouldn't be an afterthought. MiniCode brings permission validation and code review straight into the primary execution pathway.</p>
+          <p data-i18n="feat_2_desc">Safety shouldn't be an afterthought. TinyCoder brings permission validation and code review straight into the primary execution pathway.</p>
           <ul class="feature-list">
             <li data-i18n="feat_2_l1">Standard Unified Diff view before writing</li>
             <li data-i18n="feat_2_l2">Path and command allowlist verification</li>
@@ -813,7 +813,7 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20M2 12h20"/></svg>
           </div>
           <h3 data-i18n="feat_3_title">Skills & MCP</h3>
-          <p data-i18n="feat_3_desc" data-html="true">Extend capabilities endlessly. MiniCode discovers local <code>SKILL.md</code> instructions and seamlessly mounts stdio Model Context Protocol (MCP) servers.</p>
+          <p data-i18n="feat_3_desc" data-html="true">Extend capabilities endlessly. TinyCoder discovers local <code>SKILL.md</code> instructions and seamlessly mounts stdio Model Context Protocol (MCP) servers.</p>
         </div>
 
         <div class="feature-card span-8 fade-up delay-100">
@@ -873,7 +873,7 @@
       <div class="container">
         <div class="section-header fade-up">
           <h2 data-i18n="arch_title">Architecture</h2>
-          <p data-i18n="arch_desc">MiniCode is not a bloated platform. It's a precisely structured codebase centered around the main execution loop.</p>
+          <p data-i18n="arch_desc">TinyCoder is not a bloated platform. It's a precisely structured codebase centered around the main execution loop.</p>
         </div>
 
         <div class="arch-list">
@@ -918,8 +918,8 @@
         
         <div class="footer-brand">
           <h4>
-            <img src="./logo.svg" alt="MiniCode Logo" style="width: 18px; height: 18px; border-radius: 3px;" />
-            MiniCode
+            <img src="./logo.svg" alt="TinyCoder Logo" style="width: 18px; height: 18px; border-radius: 3px;" />
+            TinyCoder
           </h4>
           <p data-i18n="foot_desc">A lightweight terminal coding assistant for local development workflows. Built for learning, experimentation, and high efficiency.</p>
         </div>
@@ -928,28 +928,28 @@
           <h5 data-i18n="foot_prod">Product</h5>
           <a href="#features" data-i18n="nav_features">Features</a>
           <a href="#architecture" data-i18n="nav_arch">Architecture</a>
-          <a href="https://github.com/LiuMengxuan04/MiniCode/blob/main/ROADMAP.md" target="_blank" data-i18n="nav_roadmap">Roadmap</a>
+          <a href="https://github.com/LiuMengxuan04/TinyCoder/blob/main/ROADMAP.md" target="_blank" data-i18n="nav_roadmap">Roadmap</a>
         </div>
 
         <div class="footer-col">
           <h5 data-i18n="foot_devs">Developers</h5>
-          <a href="https://github.com/LiuMengxuan04/MiniCode" target="_blank" data-i18n="nav_github">GitHub</a>
-          <a href="https://github.com/LiuMengxuan04/MiniCode/blob/main/ARCHITECTURE.md" target="_blank" data-i18n="foot_docs">Documentation</a>
-          <a href="https://github.com/LiuMengxuan04/MiniCode/blob/main/CLAUDE_CODE_PATTERNS.md" target="_blank" data-i18n="foot_patterns">Design Patterns</a>
+          <a href="https://github.com/LiuMengxuan04/TinyCoder" target="_blank" data-i18n="nav_github">GitHub</a>
+          <a href="https://github.com/LiuMengxuan04/TinyCoder/blob/main/ARCHITECTURE.md" target="_blank" data-i18n="foot_docs">Documentation</a>
+          <a href="https://github.com/LiuMengxuan04/TinyCoder/blob/main/CLAUDE_CODE_PATTERNS.md" target="_blank" data-i18n="foot_patterns">Design Patterns</a>
         </div>
 
         <div class="footer-col">
           <h5 data-i18n="foot_comm">Community</h5>
-          <a href="https://github.com/LiuMengxuan04/MiniCode/blob/main/CONTRIBUTING.md" target="_blank" data-i18n="foot_contrib">Contributing</a>
-          <a href="https://github.com/LiuMengxuan04/MiniCode/issues" target="_blank" data-i18n="foot_report">Report an Issue</a>
+          <a href="https://github.com/LiuMengxuan04/TinyCoder/blob/main/CONTRIBUTING.md" target="_blank" data-i18n="foot_contrib">Contributing</a>
+          <a href="https://github.com/LiuMengxuan04/TinyCoder/issues" target="_blank" data-i18n="foot_report">Report an Issue</a>
         </div>
 
       </div>
 
       <div style="margin-top: 60px; padding-top: 40px; border-top: 1px solid var(--border-light); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
-        <p style="color: var(--text-tertiary); font-size: 0.85rem;" data-i18n="foot_rights">© 2026 MiniCode. MIT Licensed.</p>
-        <a href="https://www.star-history.com/#LiuMengxuan04/MiniCode&Date" target="_blank">
-          <img class="star-img" style="margin-top: 0; max-height: 40px;" alt="MiniCode Star History" src="https://api.star-history.com/image?repos=LiuMengxuan04/MiniCode&style=flat" />
+        <p style="color: var(--text-tertiary); font-size: 0.85rem;" data-i18n="foot_rights">© 2026 TinyCoder. MIT Licensed.</p>
+        <a href="https://www.star-history.com/#LiuMengxuan04/TinyCoder&Date" target="_blank">
+          <img class="star-img" style="margin-top: 0; max-height: 40px;" alt="TinyCoder Star History" src="https://api.star-history.com/image?repos=LiuMengxuan04/TinyCoder&style=flat" />
         </a>
       </div>
     </div>
@@ -959,7 +959,7 @@
     // I18n Dictionary
     const i18n = {
       en: {
-        page_title: "MiniCode | AI-powered terminal coding assistant",
+        page_title: "TinyCoder | AI-powered terminal coding assistant",
         nav_features: "Features",
         nav_arch: "Architecture",
         nav_roadmap: "Roadmap",
@@ -976,7 +976,7 @@
         t_events: "6 events",
         t_feed: "session feed",
         t_role: "assistant",
-        t_hello: "Hello! 👋<br><br>I'm mini-code, your terminal coding assistant. I can help you with:",
+        t_hello: "Hello! 👋<br><br>I'm tinycoder, your terminal coding assistant. I can help you with:",
         t_l1: "Inspecting code and repositories",
         t_l2: "Editing files with review-before-write approvals",
         t_l3: "Running commands and tracking background tasks",
@@ -997,8 +997,8 @@
         tech_5: "Local Skills",
         tech_6: "Session Resume",
         tech_7: "Context Accounting",
-        why_title: "Why MiniCode?",
-        why_desc: "MiniCode heavily borrows design patterns from Claude Code, stripping away bloated platform features to focus entirely on the core AI-developer interaction loop. It is the perfect fit if you are looking for:",
+        why_title: "Why TinyCoder?",
+        why_desc: "TinyCoder heavily borrows design patterns from Claude Code, stripping away bloated platform features to focus entirely on the core AI-developer interaction loop. It is the perfect fit if you are looking for:",
         why_1_h: "A lightweight assistant",
         why_1_p: "Instead of a heavy IDE platform, getting a standalone assistant focused purely on the coding workflow.",
         why_2_h: "Clean terminal UI",
@@ -1010,17 +1010,17 @@
         feat_title: "Meets you where you code",
         feat_desc: "A minimalist design focusing on the core tool-calling execution loop, providing safety and high extensibility.",
         feat_1_title: "Core execution loop",
-        feat_1_desc: "MiniCode manages a full multi-step tool execution loop (<code>model -> tool -> model</code>) in a single turn, providing seamless context processing without leaving the terminal.",
+        feat_1_desc: "TinyCoder manages a full multi-step tool execution loop (<code>model -> tool -> model</code>) in a single turn, providing seamless context processing without leaving the terminal.",
         feat_1_l1: "Full-screen TUI with transcript scrolling",
         feat_1_l2: "Separation of progress and final answers",
         feat_1_l3: "Feedback injection upon rejection",
         feat_2_title: "You're in control",
-        feat_2_desc: "Safety shouldn't be an afterthought. MiniCode brings permission validation and code review straight into the primary execution pathway.",
+        feat_2_desc: "Safety shouldn't be an afterthought. TinyCoder brings permission validation and code review straight into the primary execution pathway.",
         feat_2_l1: "Standard Unified Diff view before writing",
         feat_2_l2: "Path and command allowlist verification",
         feat_2_l3: "Interception of dangerous actions with responsive approval controls",
         feat_3_title: "Skills & MCP",
-        feat_3_desc: "Extend capabilities endlessly. MiniCode discovers local <code>SKILL.md</code> instructions and seamlessly mounts stdio Model Context Protocol (MCP) servers.",
+        feat_3_desc: "Extend capabilities endlessly. TinyCoder discovers local <code>SKILL.md</code> instructions and seamlessly mounts stdio Model Context Protocol (MCP) servers.",
         feat_4_title: "Built-in Toolchain",
         feat_4_desc: "Local file ops, command execution (including single-string calls like <code>git status</code>), structured user clarification via <code>ask_user</code>, and full MCP helpers are centralized through one standardized tool protocol.",
         feat_5_title: "Sessions that survive exits",
@@ -1034,7 +1034,7 @@
         feat_6_l2: "Snip compact + context collapse auto-compaction",
         feat_6_l3: "Large tool outputs saved outside the prompt context",
         arch_title: "Architecture",
-        arch_desc: "MiniCode is not a bloated platform. It's a precisely structured codebase centered around the main execution loop.",
+        arch_desc: "TinyCoder is not a bloated platform. It's a precisely structured codebase centered around the main execution loop.",
         arch_1_desc: "The core multi-turn tool-calling loop that drives the entire asynchronous conversational logic.",
         arch_2_desc: "The security sentinel handling path allowlists, command reviews, and intercepting unauthorized writes.",
         arch_3_desc: "The external connector managing MCP client connections and wrapping remote tool functions for local execution.",
@@ -1050,10 +1050,10 @@
         foot_patterns: "Design Patterns",
         foot_contrib: "Contributing",
         foot_report: "Report an Issue",
-        foot_rights: "© 2026 MiniCode. MIT Licensed."
+        foot_rights: "© 2026 TinyCoder. MIT Licensed."
       },
       zh: {
-        page_title: "MiniCode | 极简终端 AI 编码助手",
+        page_title: "TinyCoder | 极简终端 AI 编码助手",
         nav_features: "核心特性",
         nav_arch: "架构地图",
         nav_roadmap: "演进路线",
@@ -1070,7 +1070,7 @@
         t_events: "6 条事件",
         t_feed: "会话内容",
         t_role: "assistant",
-        t_hello: "你好！👋<br><br>我是 mini-code，你的终端编码助手。我可以帮你：",
+        t_hello: "你好！👋<br><br>我是 tinycoder，你的终端编码助手。我可以帮你：",
         t_l1: "审查代码和工程目录",
         t_l2: "通过写入前 review 审批编辑文件",
         t_l3: "运行命令并跟踪后台任务",
@@ -1091,8 +1091,8 @@
         tech_5: "本地工作流指令",
         tech_6: "会话恢复",
         tech_7: "上下文记账",
-        why_title: "为什么选择 MiniCode",
-        why_desc: "MiniCode 深度借鉴了 Claude Code 的设计模式，剥离了臃肿的平台级特性，专一地打磨底层 AI 开发者的交互循环。如果你希望得到下面这些东西，MiniCode 会非常合适：",
+        why_title: "为什么选择 TinyCoder",
+        why_desc: "TinyCoder 深度借鉴了 Claude Code 的设计模式，剥离了臃肿的平台级特性，专一地打磨底层 AI 开发者的交互循环。如果你希望得到下面这些东西，TinyCoder 会非常合适：",
         why_1_h: "一个轻量的助手",
         why_1_p: "而不是庞大的 IDE 平台。一个单纯为 Coding Agent 工作流打造的独立组件。",
         why_2_h: "干净的终端 UI",
@@ -1109,12 +1109,12 @@
         feat_1_l2: "执行过程 (Progress) 与最终结果分离",
         feat_1_l3: "支持拒绝执行并反馈修正建议给模型",
         feat_2_title: "安全且可控的边界",
-        feat_2_desc: "安全不能只是附加项。MiniCode 巧妙地将权限验证和代码 Diff 审查置入了主执行链路内，而非外围补丁。",
+        feat_2_desc: "安全不能只是附加项。TinyCoder 巧妙地将权限验证和代码 Diff 审查置入了主执行链路内，而非外围补丁。",
         feat_2_l1: "写入代码前展示标准 Unified Diff 进行确认",
         feat_2_l2: "基于白名单规则的路径与命令审查",
         feat_2_l3: "从框架底层拦截危险操作，并保持审批交互稳定可控",
         feat_3_title: "Skills & MCP 无限扩展",
-        feat_3_desc: "拥抱生态标准。MiniCode 可自动发现 <code>SKILL.md</code> 组织的工作流，并无缝挂载标准的 stdio MCP 服务器，无穷扩展能力边界。",
+        feat_3_desc: "拥抱生态标准。TinyCoder 可自动发现 <code>SKILL.md</code> 组织的工作流，并无缝挂载标准的 stdio MCP 服务器，无穷扩展能力边界。",
         feat_4_title: "内置底层工具链",
         feat_4_desc: "本地文件操作、Shell 命令执行（含 <code>git status</code> 这类单字符串命令）、通过 <code>ask_user</code> 的结构化澄清，以及完整 MCP helper，统一收口到标准化工具协议。",
         feat_5_title: "退出后仍可恢复的会话",
@@ -1128,7 +1128,7 @@
         feat_6_l2: "裁剪压缩 + 上下文折叠 自动压缩",
         feat_6_l3: "大工具输出保存到 prompt context 之外",
         arch_title: "核心架构地图",
-        arch_desc: "MiniCode 不是一个“大而全”的平台。它是一个高度克制、围绕主循环结构化裁剪的极简基座代码库。",
+        arch_desc: "TinyCoder 不是一个“大而全”的平台。它是一个高度克制、围绕主循环结构化裁剪的极简基座代码库。",
         arch_1_desc: "多步模型/工具循环引擎，驱动整个终端异步对话交互的心脏。",
         arch_2_desc: "核心安全哨兵组件。负责处理路径验证、命令限制审查以及写入操作的阻断拦截。",
         arch_3_desc: "外部能力连接器。管理 MCP Client 的标准连接，并负责将远端工具动态映射封装为本地可调用工具。",
@@ -1144,12 +1144,12 @@
         foot_patterns: "设计模式",
         foot_contrib: "贡献指南",
         foot_report: "提交问题反馈",
-        foot_rights: "© 2026 MiniCode. 遵循 MIT 开源协议。"
+        foot_rights: "© 2026 TinyCoder. 遵循 MIT 开源协议。"
       }
     };
 
     // Current language state
-    let currentLang = localStorage.getItem('minicode_lang') || 'en';
+    let currentLang = localStorage.getItem('tinycoder_lang') || 'en';
 
     // Update UI based on dictionary
     function updateContent() {
@@ -1180,9 +1180,9 @@
       const readmeBtn = document.getElementById('btn_readme');
       if (readmeBtn) {
         if (currentLang === 'zh') {
-          readmeBtn.href = "https://github.com/LiuMengxuan04/MiniCode/blob/main/README.zh-CN.md";
+          readmeBtn.href = "https://github.com/LiuMengxuan04/TinyCoder/blob/main/README.zh-CN.md";
         } else {
-          readmeBtn.href = "https://github.com/LiuMengxuan04/MiniCode/blob/main/README.md";
+          readmeBtn.href = "https://github.com/LiuMengxuan04/TinyCoder/blob/main/README.md";
         }
       }
     }
@@ -1190,7 +1190,7 @@
     // Toggle Language Handler
     document.getElementById('langToggle').addEventListener('click', () => {
       currentLang = currentLang === 'en' ? 'zh' : 'en';
-      localStorage.setItem('minicode_lang', currentLang);
+      localStorage.setItem('tinycoder_lang', currentLang);
       updateContent();
     });
 

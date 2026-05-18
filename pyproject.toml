@@ -3,20 +3,20 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mini-code-python"
+name = "tinycoder-python"
 version = "0.1.0"
-description = "Python rewrite of the MiniCode terminal coding assistant."
+description = "TinyCoder terminal AI coding assistant."
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{name = "MiniCode Python Rewrite"}]
+authors = [{name = "TinyCoder"}]
 license = {text = "MIT"}
 dependencies = []
 
 [project.scripts]
-minicode = "minicode.index:main_sync"
+tinycoder = "tinycoder.index:main_sync"
 
 [tool.setuptools.packages.find]
-include = ["minicode*"]
+include = ["tinycoder*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

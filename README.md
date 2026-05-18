@@ -1,6 +1,6 @@
 # TinyCoder Python
 
-MiniCode Python 是一个运行在终端中的 AI 编程 Agent。它可以读取和修改本地项目文件、执行受控命令、检索文本、应用补丁、管理会话，并通过 MCP 与 Skills 扩展外部工具能力。项目采用 Python 实现，适合用于代码辅助开发、项目分析、批量文件处理、命令行自动化和本地 Agent 工作流实验。
+TinyCoder Python 是一个运行在终端中的 AI 编程 Agent。它可以读取和修改本地项目文件、执行受控命令、检索文本、应用补丁、管理会话，并通过 MCP 与 Skills 扩展外部工具能力。项目采用 Python 实现，适合用于代码辅助开发、项目分析、批量文件处理、命令行自动化和本地 Agent 工作流实验。
 
 ---
 
@@ -45,13 +45,13 @@ pip install -e .
 安装完成后可以使用：
 
 ```bash
-minicode --help
+tinycoder --help
 ```
 
 也可以不安装，直接通过模块方式运行：
 
 ```bash
-python3 -m minicode --help
+python3 -m tinycoder --help
 ```
 
 ---
@@ -63,13 +63,13 @@ python3 -m minicode --help
 Mock 模式不需要 API key，适合检查项目是否可运行：
 
 ```bash
-MINI_CODE_MODEL_MODE=mock python3 -m minicode
+TINYCODER_MODEL_MODE=mock python3 -m tinycoder
 ```
 
 或者安装后运行：
 
 ```bash
-MINI_CODE_MODEL_MODE=mock minicode
+TINYCODER_MODEL_MODE=mock tinycoder
 ```
 
 进入交互界面后，可以输入：
@@ -94,24 +94,24 @@ export ANTHROPIC_MODEL="claude-3-5-sonnet-latest"
 然后启动：
 
 ```bash
-python3 -m minicode
+python3 -m tinycoder
 ```
 
 或者：
 
 ```bash
-minicode
+tinycoder
 ```
 
 ---
 
 ## 配置说明
 
-MiniCode Python 会读取以下配置来源：
+TinyCoder Python 会读取以下配置来源：
 
 ```text
-~/.mini-code/settings.json
-~/.mini-code/mcp.json
+~/.tinycoder/settings.json
+~/.tinycoder/mcp.json
 当前项目/.mcp.json
 环境变量
 ```
@@ -133,14 +133,14 @@ MiniCode Python 会读取以下配置来源：
 
 | 变量名 | 说明 |
 |---|---|
-| `MINI_CODE_MODEL_MODE` | 设置为 `mock` 时启用 Mock 模式 |
-| `MINI_CODE_MODEL` | 指定模型名称，优先级高于配置文件 |
+| `TINYCODER_MODEL_MODE` | 设置为 `mock` 时启用 Mock 模式 |
+| `TINYCODER_MODEL` | 指定模型名称，优先级高于配置文件 |
 | `ANTHROPIC_MODEL` | Anthropic 模型名称 |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `ANTHROPIC_AUTH_TOKEN` | 兼容接口的 Bearer token |
 | `ANTHROPIC_BASE_URL` | 自定义 Anthropic 兼容接口地址 |
-| `MINI_CODE_MAX_OUTPUT_TOKENS` | 最大输出 token 数 |
-| `MINI_CODE_HOME` | 自定义 MiniCode 数据目录，默认 `~/.mini-code` |
+| `TINYCODER_MAX_OUTPUT_TOKENS` | 最大输出 token 数 |
+| `TINYCODER_HOME` | 自定义 TinyCoder 数据目录，默认 `~/.tinycoder` |
 
 查看当前配置状态：
 
@@ -181,7 +181,7 @@ MiniCode Python 会读取以下配置来源：
 
 ## 本地文件与命令工具
 
-MiniCode Python 提供了一组本地工具快捷命令：
+TinyCoder Python 提供了一组本地工具快捷命令：
 
 | 命令 | 说明 |
 |---|---|
@@ -197,29 +197,29 @@ MiniCode Python 提供了一组本地工具快捷命令：
 示例：
 
 ```text
-/ls minicode
+/ls tinycoder
 /read pyproject.toml
-/grep class::minicode
+/grep class::tinycoder
 /edit README.md::旧内容::新内容
-/cmd python3 -m compileall -q minicode
+/cmd python3 -m compileall -q tinycoder
 ```
 
 ---
 
 ## 会话管理
 
-程序会将会话数据保存到 MiniCode 数据目录中。默认位置：
+程序会将会话数据保存到 TinyCoder 数据目录中。默认位置：
 
 ```text
-~/.mini-code/projects/
+~/.tinycoder/projects/
 ```
 
 常见操作：
 
 ```bash
-minicode --resume
-minicode --resume <session-id>
-minicode --fork <session-id>
+tinycoder --resume
+tinycoder --resume <session-id>
+tinycoder --fork <session-id>
 ```
 
 在交互界面中也可以使用：
@@ -235,7 +235,7 @@ minicode --fork <session-id>
 
 ## 权限机制
 
-MiniCode Python 会对潜在高风险操作进行权限管理，例如：
+TinyCoder Python 会对潜在高风险操作进行权限管理，例如：
 
 - 修改文件
 - 写入新文件
@@ -246,7 +246,7 @@ MiniCode Python 会对潜在高风险操作进行权限管理，例如：
 权限记录默认保存到：
 
 ```text
-~/.mini-code/permissions.json
+~/.tinycoder/permissions.json
 ```
 
 查看权限文件路径：
@@ -261,7 +261,7 @@ MiniCode Python 会对潜在高风险操作进行权限管理，例如：
 
 ## 上下文压缩
 
-长会话可能会消耗较大的上下文窗口。MiniCode Python 提供多种压缩方式：
+长会话可能会消耗较大的上下文窗口。TinyCoder Python 提供多种压缩方式：
 
 | 命令 | 说明 |
 |---|---|
@@ -275,65 +275,65 @@ MiniCode Python 会对潜在高风险操作进行权限管理，例如：
 
 ## MCP 管理
 
-MiniCode Python 支持 MCP 服务配置与管理。
+TinyCoder Python 支持 MCP 服务配置与管理。
 
 ### 查看 MCP 服务
 
 ```bash
-minicode mcp list
+tinycoder mcp list
 ```
 
 查看项目级 MCP 服务：
 
 ```bash
-minicode mcp list --project
+tinycoder mcp list --project
 ```
 
 ### 添加本地 MCP 服务
 
 ```bash
-minicode mcp add my-server -- python3 path/to/server.py
+tinycoder mcp add my-server -- python3 path/to/server.py
 ```
 
 添加到项目级配置：
 
 ```bash
-minicode mcp add my-server --project -- python3 path/to/server.py
+tinycoder mcp add my-server --project -- python3 path/to/server.py
 ```
 
 ### 添加 HTTP MCP 服务
 
 ```bash
-minicode mcp add remote-server --protocol streamable-http --url https://example.com/mcp
+tinycoder mcp add remote-server --protocol streamable-http --url https://example.com/mcp
 ```
 
 ### 添加环境变量或请求头
 
 ```bash
-minicode mcp add my-server --env API_KEY=xxx -- python3 server.py
+tinycoder mcp add my-server --env API_KEY=xxx -- python3 server.py
 ```
 
 ```bash
-minicode mcp add remote-server --protocol streamable-http --url https://example.com/mcp --header Authorization=Bearer_xxx
+tinycoder mcp add remote-server --protocol streamable-http --url https://example.com/mcp --header Authorization=Bearer_xxx
 ```
 
 ### 登录和退出
 
 ```bash
-minicode mcp login my-server --token your_token
-minicode mcp logout my-server
+tinycoder mcp login my-server --token your_token
+tinycoder mcp logout my-server
 ```
 
 ### 删除 MCP 服务
 
 ```bash
-minicode mcp remove my-server
+tinycoder mcp remove my-server
 ```
 
 项目级删除：
 
 ```bash
-minicode mcp remove my-server --project
+tinycoder mcp remove my-server --project
 ```
 
 ---
@@ -342,11 +342,11 @@ minicode mcp remove my-server --project
 
 Skills 是可复用的工作流说明，通常以 `SKILL.md` 作为入口。
 
-MiniCode Python 会从以下位置发现 Skills：
+TinyCoder Python 会从以下位置发现 Skills：
 
 ```text
-~/.mini-code/skills/<skill-name>/SKILL.md
-当前项目/.mini-code/skills/<skill-name>/SKILL.md
+~/.tinycoder/skills/<skill-name>/SKILL.md
+当前项目/.tinycoder/skills/<skill-name>/SKILL.md
 ~/.claude/skills/<skill-name>/SKILL.md
 当前项目/.claude/skills/<skill-name>/SKILL.md
 ```
@@ -354,7 +354,7 @@ MiniCode Python 会从以下位置发现 Skills：
 ### 查看 Skills
 
 ```bash
-minicode skills list
+tinycoder skills list
 ```
 
 ### 安装 Skill
@@ -362,25 +362,25 @@ minicode skills list
 用户级安装：
 
 ```bash
-minicode skills add path/to/skill-dir --name my-skill
+tinycoder skills add path/to/skill-dir --name my-skill
 ```
 
 项目级安装：
 
 ```bash
-minicode skills add path/to/skill-dir --name my-skill --project
+tinycoder skills add path/to/skill-dir --name my-skill --project
 ```
 
 ### 删除 Skill
 
 ```bash
-minicode skills remove my-skill
+tinycoder skills remove my-skill
 ```
 
 项目级删除：
 
 ```bash
-minicode skills remove my-skill --project
+tinycoder skills remove my-skill --project
 ```
 
 ---
@@ -391,7 +391,7 @@ minicode skills remove my-skill --project
 .
 ├── bin/                    # 可执行脚本入口
 ├── docs/                   # 静态文档与资源
-├── minicode/               # 主程序包
+├── tinycoder/               # 主程序包
 │   ├── agent_loop.py       # Agent 主循环
 │   ├── anthropic_adapter.py# Anthropic 模型适配器
 │   ├── cli_commands.py     # 斜杠命令
@@ -423,19 +423,19 @@ pip install -e .
 ### 语法检查
 
 ```bash
-python3 -m compileall -q minicode
+python3 -m compileall -q tinycoder
 ```
 
 ### Mock 模式验证
 
 ```bash
-MINI_CODE_MODEL_MODE=mock python3 -m minicode --help
+TINYCODER_MODEL_MODE=mock python3 -m tinycoder --help
 ```
 
 ### 运行交互程序
 
 ```bash
-MINI_CODE_MODEL_MODE=mock python3 -m minicode
+TINYCODER_MODEL_MODE=mock python3 -m tinycoder
 ```
 
 ---
@@ -443,7 +443,7 @@ MINI_CODE_MODEL_MODE=mock python3 -m minicode
 ## 安全建议
 
 - 不要提交真实 API key、token、cookie、私钥或本地配置文件。
-- 建议将 `.env`、`~/.mini-code/`、`.mcp.json` 中的敏感字段排除在 Git 之外。
+- 建议将 `.env`、`~/.tinycoder/`、`.mcp.json` 中的敏感字段排除在 Git 之外。
 - 执行 `/cmd` 前确认命令影响范围，尤其是删除、覆盖、发布、部署类命令。
 - 使用项目级 MCP 配置时，避免将私密 header 或 token 直接写入仓库。
 
@@ -462,7 +462,7 @@ dist/
 .env
 .env.*
 !.env.example
-.mini-code/
+.tinycoder/
 .mcp-tokens.json
 *.log
 .DS_Store
@@ -499,7 +499,7 @@ export ANTHROPIC_API_KEY="your_api_key_here"
 或者使用 Mock 模式验证本地功能：
 
 ```bash
-MINI_CODE_MODEL_MODE=mock python3 -m minicode
+TINYCODER_MODEL_MODE=mock python3 -m tinycoder
 ```
 
 ### 3. MCP 服务没有加载
@@ -507,8 +507,8 @@ MINI_CODE_MODEL_MODE=mock python3 -m minicode
 先检查配置：
 
 ```bash
-minicode mcp list
-minicode mcp list --project
+tinycoder mcp list
+tinycoder mcp list --project
 ```
 
 然后在交互界面中执行：
@@ -522,19 +522,19 @@ minicode mcp list --project
 确认目录结构中存在 `SKILL.md`：
 
 ```text
-~/.mini-code/skills/my-skill/SKILL.md
+~/.tinycoder/skills/my-skill/SKILL.md
 ```
 
 或：
 
 ```text
-当前项目/.mini-code/skills/my-skill/SKILL.md
+当前项目/.tinycoder/skills/my-skill/SKILL.md
 ```
 
 然后执行：
 
 ```bash
-minicode skills list
+tinycoder skills list
 ```
 
 ---

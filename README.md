@@ -1,152 +1,30 @@
-# MiniCode Python 中文说明
+# MiniCode Python
 
-MiniCode Python 是对原 TypeScript 版 MiniCode 项目的 Python 重写版本。它保留了原项目的核心运行模型、工具调用流程、权限控制、会话管理、MCP 集成、Skills 机制和终端交互能力，并用 Python 生态重新实现 CLI、Agent Loop、模型适配器和本地工具系统。
+MiniCode Python 是一个运行在终端中的 AI 编程 Agent。它可以读取和修改本地项目文件、执行受控命令、检索文本、应用补丁、管理会话，并通过 MCP 与 Skills 扩展外部工具能力。项目采用 Python 实现，适合用于代码辅助开发、项目分析、批量文件处理、命令行自动化和本地 Agent 工作流实验。
 
-> 说明：本项目是功能等价迁移版本，不是 React/Ink 终端 UI 的逐像素复刻。Python 版采用原生终端 REPL/TUI 实现，重点保证核心能力、命令行为、配置路径和扩展机制可用。
+---
 
-## 一、核心能力
+## 主要特性
 
-### 1. Coding Agent 主循环
+- **终端交互式编程 Agent**：在命令行中持续对话，围绕当前工作目录理解和处理项目。
+- **文件工具能力**：支持读取、写入、修改、精确替换、批量 patch、目录浏览和全文搜索。
+- **命令执行能力**：可在权限控制下运行本地开发命令，例如测试、构建、格式化、脚本执行等。
+- **Anthropic Messages API 支持**：可接入 Anthropic 兼容模型接口。
+- **Mock 模式**：无需配置 API key 即可测试 CLI、工具调用和基础交互流程。
+- **权限控制**：对文件修改、命令执行、路径访问等高风险操作进行审批和持久化记录。
+- **会话管理**：支持保存、恢复、重命名、分叉和清理会话。
+- **上下文压缩**：支持手动压缩、自动压缩、上下文折叠和安全裁剪，降低长会话上下文压力。
+- **MCP 扩展**：支持 stdio、content-length、newline-json、streamable-http 等 MCP 服务接入方式。
+- **Skills 扩展**：支持从用户级或项目级目录加载 `SKILL.md` 工作流能力。
+- **Python 原生 TUI/REPL**：提供轻量终端界面和斜杠命令系统。
 
-项目实现了典型的 Agent 执行链路：
+---
 
-```text
-用户输入 -> 模型推理 -> 工具调用 -> 工具结果回传 -> 模型继续推理 -> 最终回答
-```
+## 环境要求
 
-主要能力包括：
-
-- Anthropic Messages API 兼容适配
-- Tool Use / Tool Result 消息转换
-- Thinking block 保留
-- progress / final markers 输出处理
-- 多轮工具调用
-- 上下文压缩、裁剪和折叠
-- 会话保存、恢复、分叉和重命名
-
-### 2. 内置开发工具
-
-Python 版内置了常用 coding agent 工具：
-
-| 工具 | 作用 |
-|---|---|
-| `list_files` | 列出目录文件 |
-| `read_file` | 读取文件 |
-| `write_file` | 写入文件 |
-| `modify_file` | 替换文件内容并支持审查 |
-| `edit_file` | 精确搜索替换 |
-| `patch_file` | 批量 patch 文件 |
-| `grep_files` | 在项目内搜索文本 |
-| `run_command` | 执行开发命令 |
-| `web_fetch` | 抓取网页内容 |
-| `web_search` | 搜索网页内容 |
-| `ask_user` | 需要用户决策时发起询问 |
-| `load_skill` | 加载指定 Skill 工作流 |
-
-### 3. 权限与安全控制
-
-项目包含权限管理模块，重点控制：
-
-- 文件读取路径
-- 文件写入路径
-- 文件修改审批
-- Shell 命令执行
-- 已审查文件记录
-- 权限持久化
-
-默认权限文件路径：
-
-```bash
-~/.mini-code/permissions.json
-```
-
-### 4. 会话管理
-
-会话会持久化到本地，支持：
-
-- 新建会话
-- 恢复历史会话
-- 分叉会话
-- 重命名会话
-- 清理会话
-- transcript 渲染
-
-默认会话目录：
-
-```bash
-~/.mini-code/projects/
-```
-
-### 5. MCP 支持
-
-项目支持 MCP server 配置和加载，包括：
-
-- stdio MCP server
-- streamable-http MCP server
-- MCP tools
-- MCP resources
-- MCP prompts
-- token 登录与登出
-- 用户级和项目级 MCP 配置
-
-配置位置：
-
-```bash
-~/.mini-code/mcp.json
-.mcp.json
-~/.mini-code/settings.json
-```
-
-### 6. Skills 支持
-
-项目支持从多个路径发现和加载 `SKILL.md`：
-
-```bash
-~/.mini-code/skills/<skill-name>/SKILL.md
-.mini-code/skills/<skill-name>/SKILL.md
-~/.claude/skills/<skill-name>/SKILL.md
-.claude/skills/<skill-name>/SKILL.md
-```
-
-Skills 可用于给 Agent 注入特定工作流、项目规范、工具使用方式或领域知识。
-
-## 二、项目结构
-
-```text
-MiniCode-python/
-├── minicode/
-│   ├── __main__.py                 # python -m minicode 入口
-│   ├── index.py                    # 主 CLI 入口
-│   ├── agent_loop.py               # Agent 主循环
-│   ├── anthropic_adapter.py        # Anthropic 模型适配器
-│   ├── mock_model.py               # 本地 mock 模型
-│   ├── config.py                   # 配置加载与合并
-│   ├── permissions.py              # 权限管理
-│   ├── session.py                  # 会话保存/恢复/分叉
-│   ├── skills.py                   # Skill 发现、安装、移除
-│   ├── mcp.py                      # MCP 客户端与工具包装
-│   ├── prompt.py                   # 系统提示词构建
-│   ├── manage_cli.py               # MCP / Skills 管理命令
-│   ├── tty_app.py                  # Python 原生终端交互
-│   ├── cli_commands.py             # 斜杠命令
-│   ├── tools/                      # 内置工具
-│   ├── compact/                    # 上下文压缩、裁剪、折叠
-│   ├── tui/                        # 终端渲染、输入解析、transcript
-│   └── utils/                      # 通用工具函数
-├── bin/
-│   └── minicode                    # 可执行脚本
-├── docs/                           # 静态文档资源
-├── tests/                          # 测试目录
-├── pyproject.toml                  # Python 包配置
-├── LICENSE
-└── README.md
-```
-
-## 三、环境要求
-
-- Python 3.10 或更高版本
-- macOS / Linux / Windows 均可运行
-- 使用真实模型时需要 Anthropic API Key 或 Auth Token
+- Python >= 3.10
+- 推荐使用虚拟环境
+- 如需真实模型调用，需要配置 Anthropic API key 或兼容认证信息
 
 检查 Python 版本：
 
@@ -154,32 +32,14 @@ MiniCode-python/
 python3 --version
 ```
 
-## 四、安装方式
+---
 
-进入项目目录：
+## 安装方式
 
-```bash
-cd MiniCode-python
-```
-
-建议创建虚拟环境：
+进入项目根目录后执行：
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Windows PowerShell：
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
-安装项目：
-
-```bash
-python -m pip install -e .
+pip install -e .
 ```
 
 安装完成后可以使用：
@@ -188,89 +48,82 @@ python -m pip install -e .
 minicode --help
 ```
 
-也可以不安装，直接运行：
+也可以不安装，直接通过模块方式运行：
 
 ```bash
-python -m minicode --help
+python3 -m minicode --help
 ```
 
-## 五、快速启动
+---
 
-### 1. Mock 模式启动
+## 快速启动
 
-Mock 模式不需要 API Key，适合验证项目是否能启动、CLI 是否正常、工具调用链路是否可用。
+### 1. 使用 Mock 模式启动
+
+Mock 模式不需要 API key，适合检查项目是否可运行：
 
 ```bash
-MINI_CODE_MODEL_MODE=mock python -m minicode
+MINI_CODE_MODEL_MODE=mock python3 -m minicode
 ```
 
-或安装后运行：
+或者安装后运行：
 
 ```bash
 MINI_CODE_MODEL_MODE=mock minicode
 ```
 
-Windows PowerShell：
+进入交互界面后，可以输入：
 
-```powershell
-$env:MINI_CODE_MODEL_MODE="mock"
-python -m minicode
+```text
+/help
+/tools
+/ls
+/read README.md
+/exit
 ```
 
-### 2. 使用 Anthropic API 启动
+### 2. 使用真实模型启动
 
 设置环境变量：
 
 ```bash
-export ANTHROPIC_API_KEY="你的 Anthropic API Key"
+export ANTHROPIC_API_KEY="your_api_key_here"
 export ANTHROPIC_MODEL="claude-3-5-sonnet-latest"
 ```
 
-启动：
+然后启动：
 
 ```bash
-python -m minicode
+python3 -m minicode
 ```
 
-或：
+或者：
 
 ```bash
 minicode
 ```
 
-也可以使用 `ANTHROPIC_AUTH_TOKEN`：
+---
 
-```bash
-export ANTHROPIC_AUTH_TOKEN="你的 Auth Token"
-export ANTHROPIC_MODEL="claude-3-5-sonnet-latest"
-minicode
-```
+## 配置说明
 
-## 六、配置说明
+MiniCode Python 会读取以下配置来源：
 
-MiniCode Python 会合并读取以下配置：
-
-```bash
+```text
 ~/.mini-code/settings.json
 ~/.mini-code/mcp.json
 当前项目/.mcp.json
-~/.claude/settings.json
+环境变量
 ```
 
-推荐配置文件：
-
-```bash
-~/.mini-code/settings.json
-```
-
-示例：
+可选配置示例：
 
 ```json
 {
   "model": "claude-3-5-sonnet-latest",
   "maxOutputTokens": 4096,
   "env": {
-    "ANTHROPIC_API_KEY": "your-api-key"
+    "ANTHROPIC_API_KEY": "your_api_key_here"
   },
   "mcpServers": {}
 }
@@ -278,329 +131,414 @@ MiniCode Python 会合并读取以下配置：
 
 常用环境变量：
 
-| 环境变量 | 作用 |
+| 变量名 | 说明 |
 |---|---|
+| `MINI_CODE_MODEL_MODE` | 设置为 `mock` 时启用 Mock 模式 |
+| `MINI_CODE_MODEL` | 指定模型名称，优先级高于配置文件 |
+| `ANTHROPIC_MODEL` | Anthropic 模型名称 |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `ANTHROPIC_AUTH_TOKEN` | 兼容接口的 Bearer token |
+| `ANTHROPIC_BASE_URL` | 自定义 Anthropic 兼容接口地址 |
+| `MINI_CODE_MAX_OUTPUT_TOKENS` | 最大输出 token 数 |
 | `MINI_CODE_HOME` | 自定义 MiniCode 数据目录，默认 `~/.mini-code` |
-| `MINI_CODE_MODEL` | 指定模型名，优先级高于配置文件 |
-| `MINI_CODE_MODEL_MODE=mock` | 使用本地 mock 模型 |
-| `MINI_CODE_MAX_OUTPUT_TOKENS` | 指定最大输出 token |
-| `ANTHROPIC_API_KEY` | Anthropic API Key |
-| `ANTHROPIC_AUTH_TOKEN` | Anthropic Auth Token |
-| `ANTHROPIC_MODEL` | Anthropic 模型名 |
-| `ANTHROPIC_BASE_URL` | 自定义 Anthropic API Base URL |
 
-## 七、交互命令
+查看当前配置状态：
 
-启动后可在终端中直接输入自然语言任务，也可以使用斜杠命令。
+```text
+/status
+/config-paths
+/model
+```
 
-### 常用命令
+设置模型：
 
-| 命令 | 作用 |
+```text
+/model claude-3-5-sonnet-latest
+```
+
+---
+
+## 常用斜杠命令
+
+| 命令 | 说明 |
 |---|---|
 | `/help` | 查看可用命令 |
-| `/tools` | 查看可用工具 |
-| `/status` | 查看当前模型和配置来源 |
+| `/tools` | 查看 Agent 当前可用工具 |
+| `/status` | 查看模型、接口和配置来源 |
 | `/model` | 查看当前模型 |
-| `/model <model-name>` | 保存模型覆盖配置 |
+| `/model <model-name>` | 持久化设置模型 |
 | `/config-paths` | 查看配置文件路径 |
-| `/skills` | 查看发现的 Skills |
-| `/mcp` | 查看 MCP server 状态 |
+| `/skills` | 查看已发现的 Skills |
+| `/mcp` | 查看 MCP 服务状态 |
+| `/resume` | 恢复历史会话 |
+| `/rename <name>` | 重命名当前会话 |
+| `/new` | 开始新会话 |
+| `/fork` | 从当前会话分叉出新会话 |
 | `/permissions` | 查看权限存储路径 |
 | `/exit` | 退出程序 |
 
-### 文件和命令快捷操作
+---
 
-| 命令 | 示例 |
+## 本地文件与命令工具
+
+MiniCode Python 提供了一组本地工具快捷命令：
+
+| 命令 | 说明 |
 |---|---|
-| `/ls [path]` | `/ls .` |
-| `/grep <pattern>::[path]` | `/grep Agent::minicode` |
-| `/read <path>` | `/read README.md` |
-| `/write <path>::<content>` | `/write demo.txt::hello` |
-| `/modify <path>::<content>` | `/modify demo.txt::new content` |
-| `/edit <path>::<search>::<replace>` | `/edit demo.txt::hello::hi` |
-| `/patch <path>::<search1>::<replace1>...` | `/patch demo.txt::old::new` |
-| `/cmd [cwd::]<command>` | `/cmd .::python -m compileall -q minicode` |
+| `/ls [path]` | 查看目录文件 |
+| `/grep <pattern>::[path]` | 在指定路径下搜索文本 |
+| `/read <path>` | 读取文件内容 |
+| `/write <path>::<content>` | 写入文件内容 |
+| `/modify <path>::<content>` | 替换文件内容，并展示可审查 diff |
+| `/edit <path>::<search>::<replace>` | 对文件进行精确替换 |
+| `/patch <path>::<search1>::<replace1>::...` | 对一个文件执行多段替换 |
+| `/cmd [cwd::]<command> [args...]` | 执行受控开发命令 |
 
-### 会话命令
+示例：
 
-| 命令 | 作用 |
+```text
+/ls minicode
+/read pyproject.toml
+/grep class::minicode
+/edit README.md::旧内容::新内容
+/cmd python3 -m compileall -q minicode
+```
+
+---
+
+## 会话管理
+
+程序会将会话数据保存到 MiniCode 数据目录中。默认位置：
+
+```text
+~/.mini-code/projects/
+```
+
+常见操作：
+
+```bash
+minicode --resume
+minicode --resume <session-id>
+minicode --fork <session-id>
+```
+
+在交互界面中也可以使用：
+
+```text
+/resume
+/rename 项目重构会话
+/new
+/fork
+```
+
+---
+
+## 权限机制
+
+MiniCode Python 会对潜在高风险操作进行权限管理，例如：
+
+- 修改文件
+- 写入新文件
+- 执行本地命令
+- 访问受限路径
+- 调用外部扩展工具
+
+权限记录默认保存到：
+
+```text
+~/.mini-code/permissions.json
+```
+
+查看权限文件路径：
+
+```text
+/permissions
+```
+
+建议不要将本地权限文件提交到代码仓库。
+
+---
+
+## 上下文压缩
+
+长会话可能会消耗较大的上下文窗口。MiniCode Python 提供多种压缩方式：
+
+| 命令 | 说明 |
 |---|---|
-| `/new` | 新建会话 |
-| `/resume` | 选择并恢复历史会话 |
-| `/resume <id>` | 恢复指定会话 |
-| `/rename <name>` | 重命名当前会话 |
-| `/fork` | 基于当前会话创建分叉 |
-| `/compact` | 压缩当前上下文 |
-| `/collapse` | 将旧上下文折叠成摘要 |
-| `/snip` | 删除安全的中间上下文片段 |
+| `/compact` | 手动压缩上下文 |
+| `/collapse` | 将安全的历史上下文折叠为摘要 |
+| `/snip` | 裁剪安全的中间上下文片段 |
 
-## 八、管理命令
+这些操作用于降低上下文体积，同时尽量保留关键任务信息和执行轨迹。
 
-管理命令在普通终端中执行，不是在 Agent 交互界面内执行。
+---
 
-### 1. MCP 管理
+## MCP 管理
 
-查看 MCP server：
+MiniCode Python 支持 MCP 服务配置与管理。
+
+### 查看 MCP 服务
 
 ```bash
 minicode mcp list
 ```
 
-查看项目级 MCP server：
+查看项目级 MCP 服务：
 
 ```bash
 minicode mcp list --project
 ```
 
-添加 stdio MCP server：
+### 添加本地 MCP 服务
 
 ```bash
-minicode mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem .
+minicode mcp add my-server -- python3 path/to/server.py
 ```
 
-添加项目级 MCP server：
+添加到项目级配置：
 
 ```bash
-minicode mcp add filesystem --project -- npx -y @modelcontextprotocol/server-filesystem .
+minicode mcp add my-server --project -- python3 path/to/server.py
 ```
 
-添加 streamable-http MCP server：
+### 添加 HTTP MCP 服务
 
 ```bash
 minicode mcp add remote-server --protocol streamable-http --url https://example.com/mcp
 ```
 
-登录 MCP token：
+### 添加环境变量或请求头
 
 ```bash
-minicode mcp login remote-server --token your-token
+minicode mcp add my-server --env API_KEY=xxx -- python3 server.py
 ```
-
-登出 MCP token：
 
 ```bash
-minicode mcp logout remote-server
+minicode mcp add remote-server --protocol streamable-http --url https://example.com/mcp --header Authorization=Bearer_xxx
 ```
 
-删除 MCP server：
+### 登录和退出
 
 ```bash
-minicode mcp remove remote-server
+minicode mcp login my-server --token your_token
+minicode mcp logout my-server
 ```
 
-### 2. Skills 管理
+### 删除 MCP 服务
 
-查看 Skills：
+```bash
+minicode mcp remove my-server
+```
+
+项目级删除：
+
+```bash
+minicode mcp remove my-server --project
+```
+
+---
+
+## Skills 管理
+
+Skills 是可复用的工作流说明，通常以 `SKILL.md` 作为入口。
+
+MiniCode Python 会从以下位置发现 Skills：
+
+```text
+~/.mini-code/skills/<skill-name>/SKILL.md
+当前项目/.mini-code/skills/<skill-name>/SKILL.md
+~/.claude/skills/<skill-name>/SKILL.md
+当前项目/.claude/skills/<skill-name>/SKILL.md
+```
+
+### 查看 Skills
 
 ```bash
 minicode skills list
 ```
 
-安装 Skill 到用户目录：
+### 安装 Skill
+
+用户级安装：
 
 ```bash
-minicode skills add ./my-skill --name my-skill
+minicode skills add path/to/skill-dir --name my-skill
 ```
 
-安装 Skill 到当前项目：
+项目级安装：
 
 ```bash
-minicode skills add ./my-skill --name my-skill --project
+minicode skills add path/to/skill-dir --name my-skill --project
 ```
 
-移除 Skill：
+### 删除 Skill
 
 ```bash
 minicode skills remove my-skill
 ```
 
-移除项目级 Skill：
+项目级删除：
 
 ```bash
 minicode skills remove my-skill --project
 ```
 
-## 九、运行示例
+---
 
-### 示例 1：分析项目
-
-```text
-请分析当前项目结构，说明每个核心模块的职责。
-```
-
-### 示例 2：读取并修改文件
+## 项目结构
 
 ```text
-读取 minicode/agent_loop.py，帮我解释 Agent 主循环是如何执行工具调用的。
+.
+├── bin/                    # 可执行脚本入口
+├── docs/                   # 静态文档与资源
+├── minicode/               # 主程序包
+│   ├── agent_loop.py       # Agent 主循环
+│   ├── anthropic_adapter.py# Anthropic 模型适配器
+│   ├── cli_commands.py     # 斜杠命令
+│   ├── compact/            # 上下文压缩与折叠
+│   ├── config.py           # 配置读取与合并
+│   ├── mcp.py              # MCP 客户端与工具封装
+│   ├── permissions.py      # 权限系统
+│   ├── session.py          # 会话保存与恢复
+│   ├── skills.py           # Skills 发现和管理
+│   ├── tools/              # Agent 本地工具集合
+│   ├── tui/                # 终端界面组件
+│   └── utils/              # 通用工具函数
+├── tests/                  # 测试目录
+├── LICENSE                 # 开源协议
+├── pyproject.toml          # Python 项目配置
+└── README.md               # 项目说明文档
 ```
 
-```text
-把 README.md 中的安装说明改得更适合新手。
-```
+---
 
-### 示例 3：执行本地命令
+## 开发与验证
 
-```text
-帮我运行 Python 编译检查，并修复发现的问题。
-```
-
-等价快捷命令：
+### 安装为可编辑模式
 
 ```bash
-/cmd .::python -m compileall -q minicode
+pip install -e .
 ```
 
-### 示例 4：使用上下文压缩
+### 语法检查
 
 ```bash
-/compact
+python3 -m compileall -q minicode
 ```
 
-或：
+### Mock 模式验证
 
 ```bash
-/collapse
+MINI_CODE_MODEL_MODE=mock python3 -m minicode --help
 ```
 
-## 十、开发与验证
-
-### 1. 编译检查
+### 运行交互程序
 
 ```bash
-python -m compileall -q minicode
+MINI_CODE_MODEL_MODE=mock python3 -m minicode
 ```
 
-### 2. 本地启动检查
+---
 
-```bash
-MINI_CODE_MODEL_MODE=mock python -m minicode --help
+## 安全建议
+
+- 不要提交真实 API key、token、cookie、私钥或本地配置文件。
+- 建议将 `.env`、`~/.mini-code/`、`.mcp.json` 中的敏感字段排除在 Git 之外。
+- 执行 `/cmd` 前确认命令影响范围，尤其是删除、覆盖、发布、部署类命令。
+- 使用项目级 MCP 配置时，避免将私密 header 或 token 直接写入仓库。
+
+推荐 `.gitignore` 至少包含：
+
+```gitignore
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.coverage
+.env
+.env.*
+!.env.example
+.mini-code/
+.mcp-tokens.json
+*.log
+.DS_Store
+.idea/
+.vscode/
 ```
 
-### 3. 可编辑安装
+---
 
-```bash
-python -m pip install -e .
-```
+## 常见问题
 
-### 4. 包入口检查
+### 1. 启动时报错：No model configured
 
-```bash
-python -m minicode --help
-minicode --help
-```
-
-## 十一、与原 TypeScript 项目的对应关系
-
-| 原 TypeScript 能力 | Python 版对应实现 |
-|---|---|
-| Agent loop | `minicode/agent_loop.py` |
-| Anthropic adapter | `minicode/anthropic_adapter.py` |
-| Tool registry | `minicode/tools/index.py` |
-| File tools | `minicode/tools/*.py` |
-| Permission manager | `minicode/permissions.py` |
-| Session persistence | `minicode/session.py` |
-| MCP integration | `minicode/mcp.py` |
-| Skills discovery | `minicode/skills.py` |
-| Context compaction | `minicode/compact/` |
-| TUI / REPL | `minicode/tty_app.py`, `minicode/tui/` |
-| CLI management commands | `minicode/manage_cli.py` |
-
-## 十二、注意事项
-
-1. Python 版默认依赖较少，优先使用标准库实现。
-2. Web 搜索和网页抓取能力依赖当前运行环境的网络访问。
-3. Shell 命令执行受权限系统约束，不建议直接放开所有命令。
-4. 使用真实模型时必须配置模型名和认证信息。
-5. 若没有配置模型或认证信息，建议先用 `MINI_CODE_MODEL_MODE=mock` 验证本地流程。
-6. 终端 UI 是 Python 原生实现，不追求和 TypeScript 版 React/Ink 完全一致。
-7. MCP server 是否可用取决于本地是否安装对应命令或远端服务是否可访问。
-
-## 十三、常见问题
-
-### 1. 启动时报 No model configured
-
-原因：没有设置模型名。
-
-解决：
+需要设置模型名称。可以使用环境变量：
 
 ```bash
 export ANTHROPIC_MODEL="claude-3-5-sonnet-latest"
 ```
 
-或写入：
+也可以在交互界面中执行：
 
-```json
-{
-  "model": "claude-3-5-sonnet-latest"
-}
+```text
+/model claude-3-5-sonnet-latest
 ```
 
-### 2. 启动时报 No auth configured
+### 2. 启动时报错：No auth configured
 
-原因：没有配置 API Key 或 Auth Token。
-
-解决：
+需要设置 API key 或认证 token：
 
 ```bash
-export ANTHROPIC_API_KEY="your-api-key"
+export ANTHROPIC_API_KEY="your_api_key_here"
+```
+
+或者使用 Mock 模式验证本地功能：
+
+```bash
+MINI_CODE_MODEL_MODE=mock python3 -m minicode
+```
+
+### 3. MCP 服务没有加载
+
+先检查配置：
+
+```bash
+minicode mcp list
+minicode mcp list --project
+```
+
+然后在交互界面中执行：
+
+```text
+/mcp
+```
+
+### 4. Skill 没有被发现
+
+确认目录结构中存在 `SKILL.md`：
+
+```text
+~/.mini-code/skills/my-skill/SKILL.md
 ```
 
 或：
 
-```bash
-export ANTHROPIC_AUTH_TOKEN="your-token"
-```
-
-### 3. 只想本地测试，不想配置 API Key
-
-使用 mock 模式：
-
-```bash
-MINI_CODE_MODEL_MODE=mock python -m minicode
-```
-
-### 4. MCP server 不显示或不可用
-
-检查配置：
-
-```bash
-minicode mcp list
-```
-
-检查项目级配置：
-
-```bash
-minicode mcp list --project
-```
-
-检查 `.mcp.json` 或 `~/.mini-code/mcp.json` 是否包含：
-
-```json
-{
-  "mcpServers": {
-    "server-name": {
-      "command": "command",
-      "args": ["arg1", "arg2"]
-    }
-  }
-}
-```
-
-### 5. Skill 没有被发现
-
-检查目录结构是否符合：
-
 ```text
-my-skill/
-└── SKILL.md
+当前项目/.mini-code/skills/my-skill/SKILL.md
 ```
 
-然后运行：
+然后执行：
 
 ```bash
 minicode skills list
 ```
 
-## 十四、许可证
+---
 
-本项目沿用原项目许可证，详见 `LICENSE`。
+## 许可证
+
+本项目使用 MIT License。详见 `LICENSE` 文件。

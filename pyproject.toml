@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mini-code-python"
+version = "0.1.0"
+description = "Python rewrite of the MiniCode terminal coding assistant."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "MiniCode Python Rewrite"}]
+license = {text = "MIT"}
+dependencies = []
+
+[project.scripts]
+minicode = "minicode.index:main_sync"
+
+[tool.setuptools.packages.find]
+include = ["minicode*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

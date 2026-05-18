@@ -1,0 +1,47 @@
+Metadata-Version: 2.4
+Name: mini-code-python
+Version: 0.1.0
+Summary: Python rewrite of the MiniCode terminal coding assistant.
+Author: MiniCode Python Rewrite
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
+# MiniCode Python
+
+This directory is a Python implementation of the original TypeScript `MiniCode` project. It preserves the project layout and the main runtime features:
+
+- Anthropic-compatible model adapter with tool-calling message conversion.
+- Agent loop with `model -> tool -> model`, progress/final markers, thinking block preservation, tool-result persistence, micro/auto/snip/context-collapse compaction.
+- Built-in workspace tools: list/grep/read/write/modify/edit/patch/run-command/web-fetch/web-search/ask-user/load-skill.
+- Permission manager, reviewed file writes, session persistence, history, skill discovery, MCP management, and a pragmatic Python terminal UI/REPL.
+- TUI rendering helpers and input parsing ported to Python for transcript rendering and selection behavior.
+
+## Install
+
+```bash
+cd MiniCode-python
+python -m pip install -e .
+```
+
+## Run
+
+```bash
+minicode
+```
+
+Offline demo mode:
+
+```bash
+MINI_CODE_MODEL_MODE=mock minicode
+```
+
+Configuration uses the same locations as the TypeScript project:
+
+- `~/.mini-code/settings.json`
+- `~/.mini-code/mcp.json`
+- project `.mcp.json`
+- compatible `~/.claude/settings.json`
+

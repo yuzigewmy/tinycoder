@@ -157,7 +157,29 @@ TinyCoder Python 会读取以下配置来源：
 ```
 
 ---
+### 使用通义千问 / 阿里云百炼
 
+TinyCoder 默认使用 Anthropic。如果要切换到通义千问，请使用阿里云百炼的 OpenAI 兼容 Chat API，并配置以下环境变量：
+
+```bash
+export TINYCODER_MODEL_PROVIDER=qwen
+export DASHSCOPE_API_KEY=你的百炼_API_Key
+export DASHSCOPE_MODEL=qwen-plus
+# 北京地域默认值如下；新加坡/美国地域按百炼控制台文档替换
+export DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+```
+
+Windows PowerShell：
+
+```powershell
+$env:TINYCODER_MODEL_PROVIDER="qwen"
+$env:DASHSCOPE_API_KEY="你的百炼_API_Key"
+$env:DASHSCOPE_MODEL="qwen-plus"
+$env:DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+python -m tinycoder
+```
+
+如果你更关注代码任务，可以将 `DASHSCOPE_MODEL` 换成百炼支持的 Qwen Coder 系列模型。
 ## 常用斜杠命令
 
 | 命令 | 说明 |
@@ -543,26 +565,4 @@ tinycoder skills list
 
 本项目使用 MIT License。详见 `LICENSE` 文件。
 
-### 使用通义千问 / 阿里云百炼
 
-TinyCoder 默认使用 Anthropic。如果要切换到通义千问，请使用阿里云百炼的 OpenAI 兼容 Chat API，并配置以下环境变量：
-
-```bash
-export TINYCODER_MODEL_PROVIDER=qwen
-export DASHSCOPE_API_KEY=你的百炼_API_Key
-export DASHSCOPE_MODEL=qwen-plus
-# 北京地域默认值如下；新加坡/美国地域按百炼控制台文档替换
-export DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-```
-
-Windows PowerShell：
-
-```powershell
-$env:TINYCODER_MODEL_PROVIDER="qwen"
-$env:DASHSCOPE_API_KEY="你的百炼_API_Key"
-$env:DASHSCOPE_MODEL="qwen-plus"
-$env:DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
-python -m tinycoder
-```
-
-如果你更关注代码任务，可以将 `DASHSCOPE_MODEL` 换成百炼支持的 Qwen Coder 系列模型。

@@ -1,4 +1,4 @@
-# MiniCode Python
+# TinyCoder Python
 
 MiniCode Python 是一个运行在终端中的 AI 编程 Agent。它可以读取和修改本地项目文件、执行受控命令、检索文本、应用补丁、管理会话，并通过 MCP 与 Skills 扩展外部工具能力。项目采用 Python 实现，适合用于代码辅助开发、项目分析、批量文件处理、命令行自动化和本地 Agent 工作流实验。
 

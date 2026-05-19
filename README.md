@@ -559,10 +559,93 @@ tinycoder mcp list --project
 tinycoder skills list
 ```
 
+
+
+---
+
+## 运行时切换大模型与 API Key
+
+TinyCoder 支持在交互过程中通过 Slash Command 动态切换模型供应商、模型名称、API Key 和 Base URL。切换后会立即写入当前进程环境变量，并持久化到：
+
+```text
+~/.tinycoder/settings.json
+```
+
+### 查看当前模型配置
+
+```text
+/status
+/model
+/provider
+/apikey
+/base-url
+```
+
+### 查看支持的模型供应商
+
+```text
+/providers
+```
+
+当前内置支持：
+
+```text
+anthropic  Anthropic Claude
+qwen       通义千问 / 阿里云百炼
+```
+
+### 切换到 Anthropic Claude
+
+```text
+/use anthropic claude-3-5-sonnet-latest sk-ant-xxxx
+```
+
+也可以分步设置：
+
+```text
+/provider anthropic
+/model claude-3-5-sonnet-latest
+/apikey sk-ant-xxxx
+```
+
+### 切换到通义千问 / 阿里云百炼
+
+```text
+/use qwen qwen-plus sk-xxxx
+```
+
+也可以分步设置：
+
+```text
+/provider qwen
+/model qwen-plus
+/apikey sk-xxxx
+/base-url https://dashscope.aliyuncs.com/compatible-mode/v1
+```
+
+代码任务可以将模型名切换为百炼支持的 Qwen Coder 系列模型，例如：
+
+```text
+/use qwen qwen-coder-plus sk-xxxx
+```
+
+### 环境变量映射
+
+```text
+TINYCODER_MODEL_PROVIDER
+ANTHROPIC_MODEL
+ANTHROPIC_API_KEY
+ANTHROPIC_BASE_URL
+DASHSCOPE_MODEL
+DASHSCOPE_API_KEY
+DASHSCOPE_BASE_URL
+```
+
+API Key 在 `/status` 和 `/apikey` 中只会脱敏展示。`/apikey <key>` 和 `/use <provider> <model> <key>` 不会写入 TinyCoder 输入历史。
+
+
 ---
 
 ## 许可证
 
 本项目使用 MIT License。详见 `LICENSE` 文件。
-
-

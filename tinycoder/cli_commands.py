@@ -1,15 +1,61 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
-from .config import CLAUDE_SETTINGS_PATH, TINYCODER_MCP_PATH, TINYCODER_PERMISSIONS_PATH, TINYCODER_SETTINGS_PATH, load_runtime_config, save_tinycoder_settings
+from .config import (
+    CLAUDE_SETTINGS_PATH,
+    TINYCODER_MCP_PATH,
+    TINYCODER_PERMISSIONS_PATH,
+    TINYCODER_SETTINGS_PATH,
+    load_effective_settings,
+    load_runtime_config,
+    save_tinycoder_settings,
+)
+
+SUPPORTED_MODEL_PROVIDERS: dict[str, dict[str, str]] = {
+    "anthropic": {
+        "label": "Anthropic Claude",
+        "model_env": "ANTHROPIC_MODEL",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "auth_token_env": "ANTHROPIC_AUTH_TOKEN",
+        "base_url_env": "ANTHROPIC_BASE_URL",
+        "default_model": "claude-3-5-sonnet-latest",
+        "default_base_url": "https://api.anthropic.com",
+    },
+    "qwen": {
+        "label": "通义千问 / 阿里云百炼",
+        "model_env": "DASHSCOPE_MODEL",
+        "api_key_env": "DASHSCOPE_API_KEY",
+        "auth_token_env": "DASHSCOPE_AUTH_TOKEN",
+        "base_url_env": "DASHSCOPE_BASE_URL",
+        "default_model": "qwen-plus",
+        "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    },
+}
+
+PROVIDER_ALIASES = {
+    "claude": "anthropic",
+    "anthropic": "anthropic",
+    "qwen": "qwen",
+    "dashscope": "qwen",
+    "aliyun": "qwen",
+}
 
 SLASH_COMMANDS: list[dict[str, str]] = [
     {"name": "/help", "usage": "/help", "description": "Show available slash commands."},
     {"name": "/tools", "usage": "/tools", "description": "List tools available to the coding agent and tool shortcuts."},
-    {"name": "/status", "usage": "/status", "description": "Show current model and config source."},
+    {"name": "/status", "usage": "/status", "description": "Show current model, provider, API key status and config source."},
+    {"name": "/providers", "usage": "/providers", "description": "List supported model providers."},
+    {"name": "/provider", "usage": "/provider", "description": "Show the current model provider."},
+    {"name": "/provider", "usage": "/provider <anthropic|qwen>", "description": "Switch model provider and persist it."},
     {"name": "/model", "usage": "/model", "description": "Show the current model."},
-    {"name": "/model", "usage": "/model <model-name>", "description": "Persist a model override into ~/.tinycoder/settings.json."},
+    {"name": "/model", "usage": "/model <model-name>", "description": "Switch current provider model and persist it."},
+    {"name": "/apikey", "usage": "/apikey", "description": "Show the current provider API key in masked form."},
+    {"name": "/apikey", "usage": "/apikey <api-key>", "description": "Switch current provider API key and persist it."},
+    {"name": "/base-url", "usage": "/base-url", "description": "Show the current provider base URL."},
+    {"name": "/base-url", "usage": "/base-url <url>", "description": "Switch current provider base URL and persist it."},
+    {"name": "/use", "usage": "/use <provider> <model> [api-key] [base-url]", "description": "Switch provider, model, API key and optional base URL in one command."},
     {"name": "/config-paths", "usage": "/config-paths", "description": "Show tinycoder and Claude fallback settings paths."},
     {"name": "/skills", "usage": "/skills", "description": "List discovered SKILL.md workflows."},
     {"name": "/mcp", "usage": "/mcp", "description": "Show configured MCP servers and connection state."},
@@ -41,6 +87,120 @@ def find_matching_slash_commands(input_text: str) -> list[str]:
     return [command["usage"] for command in SLASH_COMMANDS if command["usage"].startswith(input_text)]
 
 
+def mask_secret(value: str | None) -> str:
+    value = (value or "").strip()
+    if not value:
+        return "未配置"
+    if len(value) <= 8:
+        return "*" * len(value)
+    return f"{value[:4]}...{value[-4:]}"
+
+
+def normalize_provider(provider: str | None) -> str:
+    key = (provider or "anthropic").strip().lower()
+    normalized = PROVIDER_ALIASES.get(key)
+    if not normalized:
+        raise RuntimeError(f"不支持的模型供应商: {provider}. 可选: {', '.join(SUPPORTED_MODEL_PROVIDERS)}")
+    return normalized
+
+
+async def _effective_env() -> dict[str, str]:
+    effective = await load_effective_settings()
+    configured_env = {str(k): str(v) for k, v in (effective.get("env") or {}).items()}
+    return {**configured_env, **os.environ}
+
+
+async def _current_provider() -> str:
+    env = await _effective_env()
+    return normalize_provider(env.get("TINYCODER_MODEL_PROVIDER") or env.get("MODEL_PROVIDER") or "anthropic")
+
+
+def _provider_info(provider: str) -> dict[str, str]:
+    return SUPPORTED_MODEL_PROVIDERS[normalize_provider(provider)]
+
+
+def _set_process_model_env(provider: str, *, model: str | None = None, api_key: str | None = None, base_url: str | None = None) -> dict[str, str]:
+    provider = normalize_provider(provider)
+    info = _provider_info(provider)
+    updates: dict[str, str] = {"TINYCODER_MODEL_PROVIDER": provider}
+    os.environ["TINYCODER_MODEL_PROVIDER"] = provider
+
+    if model:
+        updates["TINYCODER_MODEL"] = model
+        updates[info["model_env"]] = model
+        os.environ["TINYCODER_MODEL"] = model
+        os.environ[info["model_env"]] = model
+
+    if api_key:
+        updates[info["api_key_env"]] = api_key
+        os.environ[info["api_key_env"]] = api_key
+
+    if base_url:
+        cleaned = base_url.rstrip("/")
+        updates[info["base_url_env"]] = cleaned
+        os.environ[info["base_url_env"]] = cleaned
+
+    return updates
+
+
+async def _persist_model_env(provider: str, *, model: str | None = None, api_key: str | None = None, base_url: str | None = None) -> None:
+    env_updates = _set_process_model_env(provider, model=model, api_key=api_key, base_url=base_url)
+    settings: dict[str, Any] = {"env": env_updates}
+    if model:
+        settings["model"] = model
+    await save_tinycoder_settings(settings)
+
+
+async def _default_model_for(provider: str) -> str:
+    provider = normalize_provider(provider)
+    env = await _effective_env()
+    info = _provider_info(provider)
+    return (env.get(info["model_env"]) or info["default_model"]).strip()
+
+
+async def _default_base_url_for(provider: str) -> str:
+    provider = normalize_provider(provider)
+    env = await _effective_env()
+    info = _provider_info(provider)
+    return (env.get(info["base_url_env"]) or info["default_base_url"]).strip().rstrip("/")
+
+
+async def _format_status() -> str:
+    provider = await _current_provider()
+    info = _provider_info(provider)
+    env = await _effective_env()
+    try:
+        runtime = await load_runtime_config()
+        provider = normalize_provider(str(runtime.get("provider") or provider))
+        info = _provider_info(provider)
+        model = str(runtime.get("model") or "")
+        base_url = str(runtime.get("baseUrl") or "")
+        api_key = str(runtime.get("apiKey") or "")
+        auth_token = str(runtime.get("authToken") or "")
+        auth_line = f"{info['auth_token_env']}: {mask_secret(auth_token)}" if auth_token else f"{info['api_key_env']}: {mask_secret(api_key)}"
+        source = str(runtime.get("sourceSummary") or "")
+        mcp_count = len(runtime.get("mcpServers") or {})
+        return "\n".join([
+            f"provider: {provider} ({info['label']})",
+            f"model: {model}",
+            f"baseUrl: {base_url}",
+            f"auth: {auth_line}",
+            f"mcp servers: {mcp_count}",
+            source,
+        ])
+    except Exception as error:
+        model = env.get("TINYCODER_MODEL") or env.get(info["model_env"]) or "未配置"
+        base_url = env.get(info["base_url_env"]) or info["default_base_url"]
+        api_key = env.get(info["api_key_env"]) or ""
+        return "\n".join([
+            f"provider: {provider} ({info['label']})",
+            f"model: {model}",
+            f"baseUrl: {base_url}",
+            f"auth: {info['api_key_env']}: {mask_secret(api_key)}",
+            f"status unavailable: {error}",
+        ])
+
+
 async def try_handle_local_command(input_text: str, context: dict[str, Any] | None = None) -> str | None:
     context = context or {}
     if input_text in {"/", "/help"}:
@@ -49,6 +209,60 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
         return "\n".join([f"tinycoder settings: {TINYCODER_SETTINGS_PATH}", f"tinycoder permissions: {TINYCODER_PERMISSIONS_PATH}", f"tinycoder mcp: {TINYCODER_MCP_PATH}", f"compat fallback: {CLAUDE_SETTINGS_PATH}"])
     if input_text == "/permissions":
         return f"permission store: {TINYCODER_PERMISSIONS_PATH}"
+    if input_text == "/providers":
+        return "\n".join(f"{key}  {value['label']}  default={value['default_model']}" for key, value in SUPPORTED_MODEL_PROVIDERS.items())
+    if input_text == "/provider":
+        provider = await _current_provider()
+        return f"current provider: {provider} ({_provider_info(provider)['label']})"
+    if input_text.startswith("/provider "):
+        raw_provider = input_text[len("/provider "):].strip()
+        provider = normalize_provider(raw_provider)
+        model = await _default_model_for(provider)
+        base_url = await _default_base_url_for(provider)
+        await _persist_model_env(provider, model=model, base_url=base_url)
+        return f"switched provider={provider}, model={model}; saved to {TINYCODER_SETTINGS_PATH}"
+    if input_text == "/base-url":
+        provider = await _current_provider()
+        try:
+            runtime = await load_runtime_config()
+            return f"current baseUrl: {runtime.get('baseUrl')}"
+        except Exception:
+            return f"current baseUrl: {await _default_base_url_for(provider)}"
+    if input_text.startswith("/base-url "):
+        base_url = input_text[len("/base-url "):].strip().rstrip("/")
+        if not base_url:
+            return "用法: /base-url <url>"
+        provider = await _current_provider()
+        await _persist_model_env(provider, base_url=base_url)
+        return f"saved {provider} baseUrl={base_url} to {TINYCODER_SETTINGS_PATH}"
+    if input_text == "/apikey":
+        provider = await _current_provider()
+        info = _provider_info(provider)
+        env = await _effective_env()
+        try:
+            runtime = await load_runtime_config()
+            key = str(runtime.get("apiKey") or "")
+        except Exception:
+            key = env.get(info["api_key_env"], "")
+        return f"current {info['api_key_env']}: {mask_secret(key)}"
+    if input_text.startswith("/apikey "):
+        api_key = input_text[len("/apikey "):].strip()
+        if not api_key:
+            return "用法: /apikey <api-key>"
+        provider = await _current_provider()
+        await _persist_model_env(provider, api_key=api_key)
+        return f"saved {provider} API key={mask_secret(api_key)} to {TINYCODER_SETTINGS_PATH}"
+    if input_text.startswith("/use "):
+        parts = input_text.split()
+        if len(parts) < 3:
+            return "用法: /use <provider> <model> [api-key] [base-url]"
+        provider = normalize_provider(parts[1])
+        model = parts[2].strip()
+        api_key = parts[3].strip() if len(parts) >= 4 else None
+        base_url = parts[4].strip().rstrip("/") if len(parts) >= 5 else await _default_base_url_for(provider)
+        await _persist_model_env(provider, model=model, api_key=api_key, base_url=base_url)
+        key_text = f", apiKey={mask_secret(api_key)}" if api_key else ""
+        return f"switched provider={provider}, model={model}, baseUrl={base_url}{key_text}; saved to {TINYCODER_SETTINGS_PATH}"
     if input_text == "/skills":
         tools = context.get("tools")
         skills = tools.get_skills() if tools else []
@@ -76,11 +290,7 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
         shortcuts = ["/ls [path]", "/grep <pattern>::[path]", "/read <path>", "/write <path>::<content>", "/modify <path>::<content>", "/edit <path>::<search>::<replace>", "/patch <path>::<search>::<replace>...", "/cmd [cwd::]<command> [args...]"]
         return "Tools:\n" + "\n".join(tool_lines) + "\n\nShortcuts:\n" + "\n".join(shortcuts)
     if input_text == "/status":
-        try:
-            runtime = await load_runtime_config()
-            return "\n".join([f"model: {runtime.get('model')}", f"baseUrl: {runtime.get('baseUrl')}", f"auth: {'ANTHROPIC_AUTH_TOKEN' if runtime.get('authToken') else 'ANTHROPIC_API_KEY'}", f"mcp servers: {len(runtime.get('mcpServers') or {})}", str(runtime.get("sourceSummary") or "")])
-        except Exception as error:
-            return f"status unavailable: {error}"
+        return await _format_status()
     if input_text == "/model":
         try:
             runtime = await load_runtime_config()
@@ -91,8 +301,9 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
         model = input_text[len("/model "):].strip()
         if not model:
             return "用法: /model <model-name>"
-        await save_tinycoder_settings({"model": model})
-        return f"saved model={model} to {TINYCODER_SETTINGS_PATH}"
+        provider = await _current_provider()
+        await _persist_model_env(provider, model=model)
+        return f"saved provider={provider}, model={model} to {TINYCODER_SETTINGS_PATH}"
     return None
 
 

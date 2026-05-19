@@ -7,14 +7,12 @@ import uuid
 from typing import Any
 
 from .agent_loop import run_agent_turn
-from .anthropic_adapter import AnthropicModelAdapter
 from .cli_commands import complete_slash_command, find_matching_slash_commands, try_handle_local_command
 from .compact.context_collapse import apply_context_collapse_if_needed, create_context_collapse_state
 from .config import load_runtime_config
 from .manage_cli import maybe_handle_management_command
 from .mcp_status import summarize_mcp_servers
-from .mock_model import MockModelAdapter
-from .qwen_adapter import QwenModelAdapter
+from .model_router import ModelRouter
 from .permissions import PermissionManager
 from .prompt import build_system_prompt
 from .session import fork_session
@@ -63,12 +61,7 @@ async def main(argv: list[str] | None = None) -> None:
 
     permissions = PermissionManager(cwd)
     await permissions.when_ready()
-    if os.environ.get("TINYCODER_MODEL_MODE") == "mock" or runtime is None:
-        model = MockModelAdapter()
-    elif (runtime.get("provider") or "anthropic") in {"qwen", "dashscope", "aliyun"}:
-        model = QwenModelAdapter(tools, load_runtime_config)
-    else:
-        model = AnthropicModelAdapter(tools, load_runtime_config)
+    model = ModelRouter(tools, load_runtime_config)
     messages: list[dict[str, Any]] = [{"role": "system", "content": await build_system_prompt(cwd, permissions.get_summary(), {"skills": tools.get_skills(), "mcpServers": tools.get_mcp_servers()})}]
     content_replacement_state = create_content_replacement_state()
     context_collapse_state = create_context_collapse_state()
@@ -99,6 +92,7 @@ async def main(argv: list[str] | None = None) -> None:
                 "sessionId": session_id,
                 "alreadySavedCount": 0,
                 "resumeTarget": resolved_resume,
+                "getRuntimeConfig": load_runtime_config,
             })
             return
 
@@ -138,6 +132,10 @@ async def main(argv: list[str] | None = None) -> None:
                 continue
 
             await refresh_system_prompt()
+            try:
+                runtime = await load_runtime_config()
+            except Exception:
+                runtime = None
             messages.append({"role": "user", "content": input_text})
             permissions.begin_turn()
             try:

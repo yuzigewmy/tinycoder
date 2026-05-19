@@ -51,6 +51,30 @@ def _last_assistant_content(messages: list[dict[str, Any]]) -> str | None:
     return None
 
 
+SENSITIVE_MODEL_COMMANDS = ("/apikey ", "/use ")
+MODEL_CONFIG_COMMANDS = ("/provider ", "/model ", "/apikey ", "/base-url ", "/use ")
+
+
+def _is_sensitive_model_command(input_text: str) -> bool:
+    return any(input_text.startswith(prefix) for prefix in SENSITIVE_MODEL_COMMANDS)
+
+
+def _is_model_config_command(input_text: str) -> bool:
+    return input_text in {"/provider", "/model", "/apikey", "/base-url", "/status"} or any(input_text.startswith(prefix) for prefix in MODEL_CONFIG_COMMANDS)
+
+
+async def _refresh_runtime(args: dict[str, Any]) -> dict[str, Any]:
+    getter = args.get("getRuntimeConfig")
+    if getter is None:
+        return args.get("runtime") or {}
+    try:
+        runtime = await getter()
+    except Exception:
+        runtime = args.get("runtime") or {}
+    args["runtime"] = runtime
+    return runtime
+
+
 async def _refresh_system_prompt(args: dict[str, Any]) -> None:
     args["messages"][0] = {"role": "system", "content": await build_system_prompt(args["cwd"], args["permissions"].get_summary(), {"skills": args["tools"].get_skills(), "mcpServers": args["tools"].get_mcp_servers()})}
 
@@ -107,7 +131,8 @@ async def run_tty_app(args: dict[str, Any]) -> None:
             continue
         if input_text == "/exit":
             break
-        history.append(input_text)
+        if not _is_sensitive_model_command(input_text):
+            history.append(input_text)
         try:
             if input_text == "/new":
                 await clear_session(cwd, session_id)
@@ -184,6 +209,8 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                 continue
             local_result = await try_handle_local_command(input_text, {"tools": args["tools"]})
             if local_result is not None:
+                if _is_model_config_command(input_text):
+                    await _refresh_runtime(args)
                 print(local_result)
                 continue
             shortcut = parse_local_tool_shortcut(input_text)
@@ -197,6 +224,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                 continue
 
             await _refresh_system_prompt(args)
+            runtime = await _refresh_runtime(args)
             messages.append({"role": "user", "content": input_text})
             permissions.begin_turn()
             try:
@@ -206,7 +234,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     "messages": messages,
                     "cwd": cwd,
                     "permissions": permissions,
-                    "modelName": (args.get("runtime") or {}).get("model") or "",
+                    "modelName": (runtime or {}).get("model") or "",
                     "contentReplacementState": args.get("contentReplacementState"),
                     "contextCollapseState": args.get("contextCollapseState"),
                     "onToolStart": lambda name, inp: print(f"[tool] {name} {inp}"),

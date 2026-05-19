@@ -7,7 +7,7 @@ from typing import Any
 
 from .agent_loop import run_agent_turn
 from .background_tasks import list_background_tasks
-from .cli_commands import find_matching_slash_commands, try_handle_local_command
+from .cli_commands import complete_slash_command_name, find_matching_slash_commands, try_handle_local_command
 from .compact.context_collapse import apply_context_collapse_if_needed, create_context_collapse_state
 from .compact.manual_compact import manual_compact
 from .compact.snip_compact import snip_compact_conversation
@@ -77,6 +77,87 @@ def _is_model_config_command(input_text: str) -> bool:
     return input_text in {"/provider", "/model", "/apikey", "/base-url", "/status"} or any(input_text.startswith(prefix) for prefix in MODEL_CONFIG_COMMANDS)
 
 
+def _read_interactive_line(prompt: str) -> str:
+    if os.name == "nt":
+        return _read_interactive_line_windows(prompt)
+    return _read_interactive_line_posix(prompt)
+
+
+def _redraw_prompt(prompt: str, buffer: str) -> None:
+    print(f"\r{prompt}{buffer}\033[K", end="", flush=True)
+
+
+def _apply_tab_completion(prompt: str, buffer: str) -> str:
+    completed = complete_slash_command_name(buffer)
+    if completed and completed != buffer:
+        buffer = completed
+        _redraw_prompt(prompt, buffer)
+    return buffer
+
+
+def _read_interactive_line_windows(prompt: str) -> str:
+    import msvcrt
+
+    buffer = ""
+    print(prompt, end="", flush=True)
+    while True:
+        char = msvcrt.getwch()
+        if char in {"\r", "\n"}:
+            print("")
+            return buffer
+        if char == "\u0003":
+            raise KeyboardInterrupt
+        if char == "\t":
+            buffer = _apply_tab_completion(prompt, buffer)
+            continue
+        if char in {"\b", "\x7f"}:
+            if buffer:
+                buffer = buffer[:-1]
+                _redraw_prompt(prompt, buffer)
+            continue
+        if char in {"\x00", "\xe0"}:
+            msvcrt.getwch()
+            continue
+        if char >= " ":
+            buffer += char
+            print(char, end="", flush=True)
+
+
+def _read_interactive_line_posix(prompt: str) -> str:
+    import termios
+    import tty
+
+    buffer = ""
+    stdin = sys.stdin
+    fd = stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    print(prompt, end="", flush=True)
+    try:
+        tty.setraw(fd)
+        while True:
+            char = stdin.read(1)
+            if char in {"\r", "\n"}:
+                print("")
+                return buffer
+            if char == "\u0003":
+                raise KeyboardInterrupt
+            if char == "\t":
+                buffer = _apply_tab_completion(prompt, buffer)
+                continue
+            if char in {"\x7f", "\b"}:
+                if buffer:
+                    buffer = buffer[:-1]
+                    _redraw_prompt(prompt, buffer)
+                continue
+            if char == "\u001b":
+                continue
+            if char >= " ":
+                buffer += char
+                print(char, end="", flush=True)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
 async def _refresh_runtime(args: dict[str, Any]) -> dict[str, Any]:
     getter = args.get("getRuntimeConfig")
     if getter is None:
@@ -136,7 +217,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
 
     while True:
         try:
-            raw = input("tinycoder> ")
+            raw = _read_interactive_line("tinycoder> ")
         except (EOFError, KeyboardInterrupt):
             print("")
             break

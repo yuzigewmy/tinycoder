@@ -92,6 +92,19 @@ def find_matching_slash_commands(input_text: str) -> list[str]:
     return [command["usage"] for command in SLASH_COMMANDS if command["usage"].startswith(input_text)]
 
 
+def list_slash_command_names() -> list[str]:
+    return sorted({command["name"] for command in SLASH_COMMANDS})
+
+
+def complete_slash_command_name(input_text: str) -> str | None:
+    if not input_text.startswith("/") or any(ch.isspace() for ch in input_text):
+        return None
+    matches = [name for name in list_slash_command_names() if name.startswith(input_text)]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
 def mask_secret(value: str | None) -> str:
     value = (value or "").strip()
     if not value:
@@ -319,5 +332,7 @@ def complete_slash_command(line: str) -> tuple[list[str], str]:
 
 formatSlashCommands = format_slash_commands
 findMatchingSlashCommands = find_matching_slash_commands
+listSlashCommandNames = list_slash_command_names
+completeSlashCommandName = complete_slash_command_name
 tryHandleLocalCommand = try_handle_local_command
 completeSlashCommand = complete_slash_command

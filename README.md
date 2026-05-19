@@ -1,80 +1,75 @@
 # TinyCoder Python
 
-TinyCoder Python 是一个运行在终端中的 AI 编程 Agent。它可以读取和修改本地项目文件、执行受控命令、检索文本、应用补丁、管理会话，并通过 MCP 与 Skills 扩展外部工具能力。项目采用 Python 实现，适合用于代码辅助开发、项目分析、批量文件处理、命令行自动化和本地 Agent 工作流实验。
+TinyCoder Python 是一个运行在终端里的 AI 编程 Agent。它可以阅读和修改本地项目文件、执行受控开发命令、搜索代码、管理会话，并通过 MCP 与 Skills 扩展外部工具能力。
 
----
+它适合用来做代码理解、功能开发、Bug 修复、批量文件处理、命令行自动化，以及本地 Agent 工作流实验。
 
-![img.png](img.png)
+![TinyCoder screenshot](img.png)
 
-## 主要特性
+## Features
 
-- **终端交互式编程 Agent**：在命令行中持续对话，围绕当前工作目录理解和处理项目。
-- **文件工具能力**：支持读取、写入、修改、精确替换、批量 patch、目录浏览和全文搜索。
-- **命令执行能力**：可在权限控制下运行本地开发命令，例如测试、构建、格式化、脚本执行等。
-- **Anthropic Messages API 支持**：可接入 Anthropic 兼容模型接口。
-- **Mock 模式**：无需配置 API key 即可测试 CLI、工具调用和基础交互流程。
-- **权限控制**：对文件修改、命令执行、路径访问等高风险操作进行审批和持久化记录。
-- **会话管理**：支持保存、恢复、重命名、分叉和清理会话。
-- **上下文压缩**：支持手动压缩、自动压缩、上下文折叠和安全裁剪，降低长会话上下文压力。
-- **MCP 扩展**：支持 stdio、content-length、newline-json、streamable-http 等 MCP 服务接入方式。
-- **Skills 扩展**：支持从用户级或项目级目录加载 `SKILL.md` 工作流能力。
-- **Python 原生 TUI/REPL**：提供轻量终端界面和斜杠命令系统。
+- **Terminal-first coding agent**: 在命令行中持续对话，围绕当前工作目录理解和处理项目。
+- **File-aware tools**: 支持列目录、读文件、写文件、精确替换、批量 patch、全文搜索等本地文件操作。
+- **Controlled command execution**: 可以运行常见开发命令，并对高风险命令进行权限确认。
+- **Multiple model providers**: 默认支持 Anthropic Claude，也支持通义千问 / 阿里云百炼的 OpenAI 兼容接口。
+- **Mock mode**: 不配置 API key 也能测试 CLI、工具调用和基础交互流程。
+- **Permission system**: 对工作区外路径访问、危险命令、文件编辑等操作进行确认和持久化授权。
+- **Session management**: 支持保存、恢复、重命名、分叉和清理会话。
+- **Context compaction**: 支持手动压缩、自动压缩、上下文折叠和安全裁剪，降低长会话上下文压力。
+- **MCP integration**: 支持 stdio、content-length、newline-json、streamable-http 等 MCP 接入方式。
+- **Skills support**: 可以从用户级或项目级目录加载 `SKILL.md` 工作流。
+- **Lightweight Python implementation**: 代码结构直接、依赖少，便于阅读、二次开发和实验。
 
----
+## Requirements
 
-## 环境要求
-
-- Python >= 3.10
+- Python 3.10+
 - 推荐使用虚拟环境
-- 如需真实模型调用，需要配置 Anthropic API key 或兼容认证信息
+- 如需真实模型调用，需要配置 Anthropic 或 DashScope / Qwen 的认证信息
 
 检查 Python 版本：
 
 ```bash
-python3 --version
+python --version
 ```
 
----
+## Installation
 
-## 安装方式
-
-进入项目根目录后执行：
+在项目根目录执行：
 
 ```bash
 pip install -e .
 ```
 
-安装完成后可以使用：
+安装后可以运行：
 
 ```bash
 tinycoder --help
 ```
 
-也可以不安装，直接通过模块方式运行：
+也可以不安装，直接以模块方式启动：
 
 ```bash
-python3 -m tinycoder --help
+python -m tinycoder --help
 ```
 
----
+## Quick Start
 
-## 快速启动
+### Start with mock mode
 
-### 1. 使用 Mock 模式启动
-
-Mock 模式不需要 API key，适合检查项目是否可运行：
+Mock 模式不需要 API key，适合先确认程序能否正常启动：
 
 ```bash
-TINYCODER_MODEL_MODE=mock python3 -m tinycoder
+TINYCODER_MODEL_MODE=mock python -m tinycoder
 ```
 
-或者安装后运行：
+Windows PowerShell：
 
-```bash
-TINYCODER_MODEL_MODE=mock tinycoder
+```powershell
+$env:TINYCODER_MODEL_MODE="mock"
+python -m tinycoder
 ```
 
-进入交互界面后，可以输入：
+进入交互界面后可以试试：
 
 ```text
 /help
@@ -84,41 +79,55 @@ TINYCODER_MODEL_MODE=mock tinycoder
 /exit
 ```
 
-### 2. 使用真实模型启动
-
-设置环境变量：
+### Start with Anthropic
 
 ```bash
 export ANTHROPIC_API_KEY="your_api_key_here"
 export ANTHROPIC_MODEL="claude-3-5-sonnet-latest"
+python -m tinycoder
 ```
 
-然后启动：
+Windows PowerShell：
+
+```powershell
+$env:ANTHROPIC_API_KEY="your_api_key_here"
+$env:ANTHROPIC_MODEL="claude-3-5-sonnet-latest"
+python -m tinycoder
+```
+
+### Start with Qwen / DashScope
 
 ```bash
-python3 -m tinycoder
+export TINYCODER_MODEL_PROVIDER=qwen
+export DASHSCOPE_API_KEY="your_dashscope_api_key"
+export DASHSCOPE_MODEL=qwen-plus
+export DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+python -m tinycoder
 ```
 
-或者：
+Windows PowerShell：
 
-```bash
-tinycoder
+```powershell
+$env:TINYCODER_MODEL_PROVIDER="qwen"
+$env:DASHSCOPE_API_KEY="your_dashscope_api_key"
+$env:DASHSCOPE_MODEL="qwen-plus"
+$env:DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+python -m tinycoder
 ```
 
----
+## Configuration
 
-## 配置说明
-
-TinyCoder Python 会读取以下配置来源：
+TinyCoder 会合并读取以下配置来源：
 
 ```text
 ~/.tinycoder/settings.json
 ~/.tinycoder/mcp.json
-当前项目/.mcp.json
-环境变量
+./.mcp.json
+~/.claude/settings.json
+process environment
 ```
 
-可选配置示例：
+一个最小配置示例：
 
 ```json
 {
@@ -133,521 +142,224 @@ TinyCoder Python 会读取以下配置来源：
 
 常用环境变量：
 
-| 变量名 | 说明 |
-|---|---|
+| Variable | Description |
+| --- | --- |
 | `TINYCODER_MODEL_MODE` | 设置为 `mock` 时启用 Mock 模式 |
-| `TINYCODER_MODEL` | 指定模型名称，优先级高于配置文件 |
-| `ANTHROPIC_MODEL` | Anthropic 模型名称 |
+| `TINYCODER_MODEL_PROVIDER` | 模型供应商，支持 `anthropic` 或 `qwen` |
+| `TINYCODER_MODEL` | 覆盖当前模型名 |
+| `ANTHROPIC_MODEL` | Anthropic 模型名 |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
-| `ANTHROPIC_AUTH_TOKEN` | 兼容接口的 Bearer token |
-| `ANTHROPIC_BASE_URL` | 自定义 Anthropic 兼容接口地址 |
+| `ANTHROPIC_AUTH_TOKEN` | Anthropic 兼容接口 Bearer token |
+| `ANTHROPIC_BASE_URL` | Anthropic 兼容接口地址 |
+| `DASHSCOPE_API_KEY` | DashScope / Qwen API key |
+| `DASHSCOPE_MODEL` | DashScope / Qwen 模型名 |
+| `DASHSCOPE_BASE_URL` | DashScope OpenAI 兼容接口地址 |
 | `TINYCODER_MAX_OUTPUT_TOKENS` | 最大输出 token 数 |
-| `TINYCODER_HOME` | 自定义 TinyCoder 数据目录，默认 `~/.tinycoder` |
+| `TINYCODER_MAX_RETRIES` | 模型请求最大重试次数 |
+| `TINYCODER_HOME` | TinyCoder 数据目录，默认 `~/.tinycoder` |
 
-查看当前配置状态：
+在交互界面中可以使用这些命令查看或修改配置：
 
 ```text
 /status
+/providers
+/provider qwen
+/model qwen-plus
+/apikey your_api_key_here
+/base-url https://dashscope.aliyuncs.com/compatible-mode/v1
 /config-paths
-/model
 ```
 
-设置模型：
+## Slash Commands
 
-```text
-/model claude-3-5-sonnet-latest
-```
-
----
-### 使用通义千问 / 阿里云百炼
-
-TinyCoder 默认使用 Anthropic。如果要切换到通义千问，请使用阿里云百炼的 OpenAI 兼容 Chat API，并配置以下环境变量：
-
-```bash
-export TINYCODER_MODEL_PROVIDER=qwen
-export DASHSCOPE_API_KEY=你的百炼_API_Key
-export DASHSCOPE_MODEL=qwen-plus
-# 北京地域默认值如下；新加坡/美国地域按百炼控制台文档替换
-export DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-```
-
-Windows PowerShell：
-
-```powershell
-$env:TINYCODER_MODEL_PROVIDER="qwen"
-$env:DASHSCOPE_API_KEY="你的百炼_API_Key"
-$env:DASHSCOPE_MODEL="qwen-plus"
-$env:DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
-python -m tinycoder
-```
-
-如果你更关注代码任务，可以将 `DASHSCOPE_MODEL` 换成百炼支持的 Qwen Coder 系列模型。
-## 常用斜杠命令
-
-| 命令 | 说明 |
-|---|---|
+| Command | Description |
+| --- | --- |
 | `/help` | 查看可用命令 |
 | `/tools` | 查看 Agent 当前可用工具 |
-| `/status` | 查看模型、接口和配置来源 |
-| `/model` | 查看当前模型 |
-| `/model <model-name>` | 持久化设置模型 |
+| `/status` | 查看模型、供应商、认证和配置来源 |
+| `/providers` | 查看支持的模型供应商 |
+| `/provider [name]` | 查看或切换模型供应商 |
+| `/model [name]` | 查看或切换模型 |
+| `/apikey [key]` | 查看或设置当前供应商 API key |
+| `/base-url [url]` | 查看或设置当前供应商 Base URL |
+| `/use <provider> <model> [api-key] [base-url]` | 一次性切换供应商、模型和认证 |
 | `/config-paths` | 查看配置文件路径 |
 | `/skills` | 查看已发现的 Skills |
 | `/mcp` | 查看 MCP 服务状态 |
-| `/resume` | 恢复历史会话 |
+| `/permissions` | 查看权限存储路径 |
+| `/resume [id]` | 查看或恢复历史会话 |
 | `/rename <name>` | 重命名当前会话 |
 | `/new` | 开始新会话 |
-| `/fork` | 从当前会话分叉出新会话 |
-| `/permissions` | 查看权限存储路径 |
+| `/fork` | 从当前会话分叉 |
+| `/compact` | 手动压缩上下文 |
+| `/collapse` | 将旧上下文折叠成摘要 |
+| `/snip` | 不调用模型，裁剪安全上下文片段 |
 | `/exit` | 退出程序 |
 
----
+## Local Tools
 
-## 本地文件与命令工具
+TinyCoder 内置了一组本地工具，模型可以通过它们完成实际开发工作。
 
-TinyCoder Python 提供了一组本地工具快捷命令：
-
-| 命令 | 说明 |
-|---|---|
-| `/ls [path]` | 查看目录文件 |
-| `/grep <pattern>::[path]` | 在指定路径下搜索文本 |
-| `/read <path>` | 读取文件内容 |
-| `/write <path>::<content>` | 写入文件内容 |
-| `/modify <path>::<content>` | 替换文件内容，并展示可审查 diff |
-| `/edit <path>::<search>::<replace>` | 对文件进行精确替换 |
-| `/patch <path>::<search1>::<replace1>::...` | 对一个文件执行多段替换 |
+| Tool / Shortcut | Description |
+| --- | --- |
+| `/ls [path]` | 列出目录内容 |
+| `/grep <pattern>::[path]` | 搜索文件内容 |
+| `/read <path>` | 读取文件 |
+| `/md <path>` | 读取并渲染 Markdown 文件 |
+| `/write <path>::<content>` | 写入文件 |
+| `/modify <path>::<content>` | 替换文件内容，并展示 diff |
+| `/edit <path>::<search>::<replace>` | 精确替换文件片段 |
+| `/patch <path>::<search1>::<replace1>::...` | 对一个文件应用多段替换 |
 | `/cmd [cwd::]<command> [args...]` | 执行受控开发命令 |
+
+Agent 内部还会使用 `ask_user`、`load_skill`、`web_fetch`、`web_search` 等工具。
+
+## MCP
+
+TinyCoder 支持通过 MCP 扩展外部工具。配置可以放在用户级文件：
+
+```text
+~/.tinycoder/mcp.json
+```
+
+也可以放在项目级文件：
+
+```text
+./.mcp.json
+```
 
 示例：
 
-```text
-/ls tinycoder
-/read pyproject.toml
-/grep class::tinycoder
-/edit README.md::旧内容::新内容
-/cmd python3 -m compileall -q tinycoder
+```json
+{
+  "mcpServers": {
+    "example": {
+      "command": "python",
+      "args": ["-m", "example_mcp_server"],
+      "env": {
+        "EXAMPLE_TOKEN": "token"
+      },
+      "protocol": "auto"
+    }
+  }
+}
 ```
 
----
-
-## 会话管理
-
-程序会将会话数据保存到 TinyCoder 数据目录中。默认位置：
-
-```text
-~/.tinycoder/projects/
-```
-
-常见操作：
-
-```bash
-tinycoder --resume
-tinycoder --resume <session-id>
-tinycoder --fork <session-id>
-```
-
-在交互界面中也可以使用：
+支持的协议值：
 
 ```text
-/resume
-/rename 项目重构会话
-/new
-/fork
+auto
+content-length
+newline-json
+streamable-http
 ```
 
----
+启动后可以用 `/mcp` 查看连接状态。连接成功的 MCP 工具会自动加入工具列表。
 
-## 权限机制
+## Skills
 
-TinyCoder Python 会对潜在高风险操作进行权限管理，例如：
+TinyCoder 可以发现并加载 `SKILL.md` 工作流。系统提示词会告诉模型当前发现的 Skills；当用户明确提到某个 skill，或任务匹配某个 skill 时，模型会先调用 `load_skill` 再执行对应流程。
 
-- 修改文件
-- 写入新文件
-- 执行本地命令
-- 访问受限路径
-- 调用外部扩展工具
+适合把项目内常用流程沉淀为 Skills，例如：
 
-权限记录默认保存到：
+- 发布检查
+- 代码审查流程
+- 项目专属测试步骤
+- 文档生成规范
+- 数据处理步骤
+
+## Permissions
+
+TinyCoder 默认信任当前工作目录内的读取和操作。以下情况会触发权限检查：
+
+- 访问当前工作目录之外的路径
+- 执行未知命令
+- 执行可能修改项目或系统状态的命令
+- 运行危险 Git 操作，例如 `git reset --hard`
+- 对文件进行编辑并需要用户确认
+
+权限记录默认保存在：
 
 ```text
 ~/.tinycoder/permissions.json
 ```
 
-查看权限文件路径：
+## Sessions
+
+会话会按项目保存到 TinyCoder 数据目录中。你可以：
+
+- 用 `/resume` 查看历史会话
+- 用 `/resume <id>` 恢复指定会话
+- 用 `/rename <name>` 给当前会话命名
+- 用 `/fork` 从当前上下文分叉出新会话
+- 用 `/new` 清空当前会话重新开始
+
+长会话中可以使用 `/compact`、`/collapse` 或 `/snip` 管理上下文窗口。
+
+## Project Structure
 
 ```text
-/permissions
+tinycoder/
+  index.py                 # CLI 入口
+  tty_app.py               # 终端交互界面
+  agent_loop.py            # Agent 主循环
+  model_router.py          # 模型路由
+  anthropic_adapter.py     # Anthropic Messages API 适配
+  qwen_adapter.py          # Qwen / DashScope OpenAI 兼容接口适配
+  config.py                # 配置加载与合并
+  permissions.py           # 权限系统
+  session.py               # 会话保存与恢复
+  prompt.py                # 系统提示词构建
+  mcp.py                   # MCP 集成
+  skills.py                # Skills 发现
+  tools/                   # 内置工具
+  compact/                 # 上下文压缩与裁剪
+  tui/                     # 终端渲染和输入相关模块
+  utils/                   # 工具函数
 ```
 
-建议不要将本地权限文件提交到代码仓库。
+## Development
 
----
-
-## 上下文压缩
-
-长会话可能会消耗较大的上下文窗口。TinyCoder Python 提供多种压缩方式：
-
-| 命令 | 说明 |
-|---|---|
-| `/compact` | 手动压缩上下文 |
-| `/collapse` | 将安全的历史上下文折叠为摘要 |
-| `/snip` | 裁剪安全的中间上下文片段 |
-
-这些操作用于降低上下文体积，同时尽量保留关键任务信息和执行轨迹。
-
----
-
-## MCP 管理
-
-TinyCoder Python 支持 MCP 服务配置与管理。
-
-### 查看 MCP 服务
-
-```bash
-tinycoder mcp list
-```
-
-查看项目级 MCP 服务：
-
-```bash
-tinycoder mcp list --project
-```
-
-### 添加本地 MCP 服务
-
-```bash
-tinycoder mcp add my-server -- python3 path/to/server.py
-```
-
-添加到项目级配置：
-
-```bash
-tinycoder mcp add my-server --project -- python3 path/to/server.py
-```
-
-### 添加 HTTP MCP 服务
-
-```bash
-tinycoder mcp add remote-server --protocol streamable-http --url https://example.com/mcp
-```
-
-### 添加环境变量或请求头
-
-```bash
-tinycoder mcp add my-server --env API_KEY=xxx -- python3 server.py
-```
-
-```bash
-tinycoder mcp add remote-server --protocol streamable-http --url https://example.com/mcp --header Authorization=Bearer_xxx
-```
-
-### 登录和退出
-
-```bash
-tinycoder mcp login my-server --token your_token
-tinycoder mcp logout my-server
-```
-
-### 删除 MCP 服务
-
-```bash
-tinycoder mcp remove my-server
-```
-
-项目级删除：
-
-```bash
-tinycoder mcp remove my-server --project
-```
-
----
-
-## Skills 管理
-
-Skills 是可复用的工作流说明，通常以 `SKILL.md` 作为入口。
-
-TinyCoder Python 会从以下位置发现 Skills：
-
-```text
-~/.tinycoder/skills/<skill-name>/SKILL.md
-当前项目/.tinycoder/skills/<skill-name>/SKILL.md
-~/.claude/skills/<skill-name>/SKILL.md
-当前项目/.claude/skills/<skill-name>/SKILL.md
-```
-
-### 查看 Skills
-
-```bash
-tinycoder skills list
-```
-
-### 安装 Skill
-
-用户级安装：
-
-```bash
-tinycoder skills add path/to/skill-dir --name my-skill
-```
-
-项目级安装：
-
-```bash
-tinycoder skills add path/to/skill-dir --name my-skill --project
-```
-
-### 删除 Skill
-
-```bash
-tinycoder skills remove my-skill
-```
-
-项目级删除：
-
-```bash
-tinycoder skills remove my-skill --project
-```
-
----
-
-## 项目结构
-
-```text
-.
-├── bin/                    # 可执行脚本入口
-├── docs/                   # 静态文档与资源
-├── tinycoder/               # 主程序包
-│   ├── agent_loop.py       # Agent 主循环
-│   ├── anthropic_adapter.py# Anthropic 模型适配器
-│   ├── cli_commands.py     # 斜杠命令
-│   ├── compact/            # 上下文压缩与折叠
-│   ├── config.py           # 配置读取与合并
-│   ├── mcp.py              # MCP 客户端与工具封装
-│   ├── permissions.py      # 权限系统
-│   ├── session.py          # 会话保存与恢复
-│   ├── skills.py           # Skills 发现和管理
-│   ├── tools/              # Agent 本地工具集合
-│   ├── tui/                # 终端界面组件
-│   └── utils/              # 通用工具函数
-├── tests/                  # 测试目录
-├── LICENSE                 # 开源协议
-├── pyproject.toml          # Python 项目配置
-└── README.md               # 项目说明文档
-```
-
----
-
-## 开发与验证
-
-### 安装为可编辑模式
+克隆或进入项目后：
 
 ```bash
 pip install -e .
 ```
 
-### 语法检查
+使用 Mock 模式运行：
 
 ```bash
-python3 -m compileall -q tinycoder
+TINYCODER_MODEL_MODE=mock python -m tinycoder
 ```
 
-### Mock 模式验证
+运行帮助：
 
 ```bash
-TINYCODER_MODEL_MODE=mock python3 -m tinycoder --help
+python -m tinycoder --help
 ```
 
-### 运行交互程序
-
-```bash
-TINYCODER_MODEL_MODE=mock python3 -m tinycoder
-```
-
----
-
-## 安全建议
-
-- 不要提交真实 API key、token、cookie、私钥或本地配置文件。
-- 建议将 `.env`、`~/.tinycoder/`、`.mcp.json` 中的敏感字段排除在 Git 之外。
-- 执行 `/cmd` 前确认命令影响范围，尤其是删除、覆盖、发布、部署类命令。
-- 使用项目级 MCP 配置时，避免将私密 header 或 token 直接写入仓库。
-
-推荐 `.gitignore` 至少包含：
-
-```gitignore
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-build/
-dist/
-*.egg-info/
-.pytest_cache/
-.coverage
-.env
-.env.*
-!.env.example
-.tinycoder/
-.mcp-tokens.json
-*.log
-.DS_Store
-.idea/
-.vscode/
-```
-
----
-
-## 常见问题
-
-### 1. 启动时报错：No model configured
-
-需要设置模型名称。可以使用环境变量：
-
-```bash
-export ANTHROPIC_MODEL="claude-3-5-sonnet-latest"
-```
-
-也可以在交互界面中执行：
+如果你修改了工具、模型适配器或上下文逻辑，建议至少用 Mock 模式验证：
 
 ```text
-/model claude-3-5-sonnet-latest
+/tools
+/ls
+/read README.md
+/cmd python --version
 ```
 
-### 2. 启动时报错：No auth configured
+## Design Notes
 
-需要设置 API key 或认证 token：
+TinyCoder 的核心设计是小而清晰：
 
-```bash
-export ANTHROPIC_API_KEY="your_api_key_here"
-```
+1. CLI 初始化运行时配置、权限、工具、MCP 和系统提示词。
+2. `ModelRouter` 根据配置选择模型适配器。
+3. `agent_loop` 让模型在“回复、调用工具、读取工具结果、继续推理”之间循环。
+4. 工具执行统一经过 `ToolRegistry`。
+5. 权限系统在高风险文件和命令操作前拦截。
+6. 会话、上下文压缩和工具结果预算用于支持长时间工作。
 
-或者使用 Mock 模式验证本地功能：
+这让它既可以作为可用的终端助手，也适合作为学习和改造 Agent 架构的 Python 示例项目。
 
-```bash
-TINYCODER_MODEL_MODE=mock python3 -m tinycoder
-```
+## License
 
-### 3. MCP 服务没有加载
-
-先检查配置：
-
-```bash
-tinycoder mcp list
-tinycoder mcp list --project
-```
-
-然后在交互界面中执行：
-
-```text
-/mcp
-```
-
-### 4. Skill 没有被发现
-
-确认目录结构中存在 `SKILL.md`：
-
-```text
-~/.tinycoder/skills/my-skill/SKILL.md
-```
-
-或：
-
-```text
-当前项目/.tinycoder/skills/my-skill/SKILL.md
-```
-
-然后执行：
-
-```bash
-tinycoder skills list
-```
-
-
-
----
-
-## 运行时切换大模型与 API Key
-
-TinyCoder 支持在交互过程中通过 Slash Command 动态切换模型供应商、模型名称、API Key 和 Base URL。切换后会立即写入当前进程环境变量，并持久化到：
-
-```text
-~/.tinycoder/settings.json
-```
-
-### 查看当前模型配置
-
-```text
-/status
-/model
-/provider
-/apikey
-/base-url
-```
-
-### 查看支持的模型供应商
-
-```text
-/providers
-```
-
-当前内置支持：
-
-```text
-anthropic  Anthropic Claude
-qwen       通义千问 / 阿里云百炼
-```
-
-### 切换到 Anthropic Claude
-
-```text
-/use anthropic claude-3-5-sonnet-latest sk-ant-xxxx
-```
-
-也可以分步设置：
-
-```text
-/provider anthropic
-/model claude-3-5-sonnet-latest
-/apikey sk-ant-xxxx
-```
-
-### 切换到通义千问 / 阿里云百炼
-
-```text
-/use qwen qwen-plus sk-xxxx
-```
-
-也可以分步设置：
-
-```text
-/provider qwen
-/model qwen-plus
-/apikey sk-xxxx
-/base-url https://dashscope.aliyuncs.com/compatible-mode/v1
-```
-
-代码任务可以将模型名切换为百炼支持的 Qwen Coder 系列模型，例如：
-
-```text
-/use qwen qwen-coder-plus sk-xxxx
-```
-
-### 环境变量映射
-
-```text
-TINYCODER_MODEL_PROVIDER
-ANTHROPIC_MODEL
-ANTHROPIC_API_KEY
-ANTHROPIC_BASE_URL
-DASHSCOPE_MODEL
-DASHSCOPE_API_KEY
-DASHSCOPE_BASE_URL
-```
-
-API Key 在 `/status` 和 `/apikey` 中只会脱敏展示。`/apikey <key>` 和 `/use <provider> <model> <key>` 不会写入 TinyCoder 输入历史。
-
-
----
-
-## 许可证
-
-本项目使用 MIT License。详见 `LICENSE` 文件。
+MIT. See [LICENSE](LICENSE) for details.

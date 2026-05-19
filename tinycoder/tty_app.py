@@ -67,6 +67,10 @@ def _render_shortcut_output(shortcut: dict[str, Any], output: Any) -> str:
 
 SENSITIVE_MODEL_COMMANDS = ("/apikey ", "/use ")
 MODEL_CONFIG_COMMANDS = ("/provider ", "/model ", "/apikey ", "/base-url ", "/use ")
+PROMPT_RED = "\033[31m"
+PROMPT_RESET = "\033[0m"
+PROMPT_TEXT = "tinycoder> "
+COLORED_PROMPT = f"{PROMPT_RED}{PROMPT_TEXT}{PROMPT_RESET}"
 
 
 def _is_sensitive_model_command(input_text: str) -> bool:
@@ -217,7 +221,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
 
     while True:
         try:
-            raw = _read_interactive_line("tinycoder> ")
+            raw = _read_interactive_line(COLORED_PROMPT)
         except (EOFError, KeyboardInterrupt):
             print("")
             break

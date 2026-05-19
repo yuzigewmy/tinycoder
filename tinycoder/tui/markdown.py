@@ -203,3 +203,47 @@ def render_markdownish(input_text: str, *, color: bool | None = None) -> str:
 
 renderMarkdownish = render_markdownish
 isMarkdownPath = is_markdown_path
+
+
+
+class MarkdownStreamPrinter:
+    """Line-buffered Markdown renderer for streaming model output.
+
+    Model providers usually stream text token by token. Rendering full Markdown on
+    every token causes flicker, while printing raw deltas exposes Markdown markers
+    such as #, ** and ``` directly. This printer buffers until a newline is seen,
+    renders the completed line with render_markdownish(), and flushes the final
+    partial line when finish() is called.
+    """
+
+    def __init__(self, *, prefix_newline: bool = True, suffix_newline: bool = True) -> None:
+        self._buffer = ""
+        self._started = False
+        self._prefix_newline = prefix_newline
+        self._suffix_newline = suffix_newline
+
+    def write(self, delta: str) -> None:
+        if not delta:
+            return
+        if not self._started:
+            if self._prefix_newline:
+                print("")
+            self._started = True
+        self._buffer += str(delta).replace("\r\n", "\n").replace("\r", "\n")
+        parts = self._buffer.split("\n")
+        self._buffer = parts.pop()
+        for line in parts:
+            print(render_markdownish(line), flush=True)
+
+    def finish(self) -> None:
+        if self._buffer:
+            if not self._started and self._prefix_newline:
+                print("")
+                self._started = True
+            print(render_markdownish(self._buffer), flush=True)
+            self._buffer = ""
+        if self._started and self._suffix_newline:
+            print("")
+
+
+markdownStreamPrinter = MarkdownStreamPrinter

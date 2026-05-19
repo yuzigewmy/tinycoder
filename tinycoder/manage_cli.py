@@ -7,17 +7,33 @@ from .skills import discover_skills, install_skill, remove_managed_skill
 
 
 def print_usage() -> None:
-    print("""tinycoder management commands
+    print("""TinyCoder 管理命令
 
-tinycoder mcp list [--project]
-tinycoder mcp add <name> [--project] [--protocol <auto|content-length|newline-json|streamable-http>] [--url <endpoint>] [--header KEY=VALUE ...] [--env KEY=VALUE ...] [-- <command> [args...]]
-tinycoder mcp login <name> --token <bearer-token>
-tinycoder mcp logout <name>
-tinycoder mcp remove <name> [--project]
+MCP 管理：
+  tinycoder mcp list [--project]
+      查看已配置的 MCP Server。
+  tinycoder mcp add <name> [--project] [--protocol <auto|content-length|newline-json|streamable-http>] [--url <endpoint>] [--header KEY=VALUE ...] [--env KEY=VALUE ...] [-- <command> [args...]]
+      新增 MCP Server，可配置本地命令或 HTTP 端点。
+  tinycoder mcp login <name> --token <bearer-token>
+      为指定 MCP Server 保存 Bearer Token。
+  tinycoder mcp logout <name>
+      删除指定 MCP Server 的 Token。
+  tinycoder mcp remove <name> [--project]
+      移除 MCP Server 配置。
 
-tinycoder skills list
-tinycoder skills add <path-to-skill-or-dir> [--name <name>] [--project]
-tinycoder skills remove <name> [--project]""")
+Skill 管理：
+  tinycoder skills list
+      查看已发现的 Skill。
+  tinycoder skills add <path-to-skill-or-dir> [--name <name>] [--project]
+      安装一个 Skill 文件或 Skill 目录。
+  tinycoder skills remove <name> [--project]
+      移除指定 Skill。
+
+常用入口：
+  tinycoder
+      启动交互式 Coding Agent。
+  tinycoder --help
+      查看本帮助。""")
 
 
 def parse_scope(args: list[str]) -> dict[str, Any]:

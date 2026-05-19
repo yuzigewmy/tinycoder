@@ -313,3 +313,152 @@ class QwenModelAdapter:
             "diagnostics": diagnostics,
             "usage": usage,
         }
+
+
+
+async def _emit_text_delta(callback: Any | None, delta: str) -> None:
+    if callback is None or not delta:
+        return
+    result = callback(delta)
+    if hasattr(result, "__await__"):
+        await result
+
+
+def _iter_sse_payloads(response: Any):
+    event_name: str | None = None
+    data_lines: list[str] = []
+    for raw_line in response:
+        line = raw_line.decode("utf-8", "replace").rstrip("\n")
+        if line.endswith("\r"):
+            line = line[:-1]
+        if not line:
+            if data_lines:
+                yield event_name, "\n".join(data_lines)
+            event_name = None
+            data_lines = []
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("event:"):
+            event_name = line[len("event:"):].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[len("data:"):].strip())
+    if data_lines:
+        yield event_name, "\n".join(data_lines)
+
+
+async def _qwen_stream_next(self: QwenModelAdapter, messages: list[dict[str, Any]], on_text_delta: Any | None = None) -> dict[str, Any]:
+    runtime = await self.get_runtime_config()
+    base_url = str(runtime.get("baseUrl") or "https://dashscope.aliyuncs.com/compatible-mode/v1").rstrip("/")
+    url = f"{base_url}/chat/completions"
+    model = str(runtime.get("model") or "qwen-plus")
+    max_output_tokens = resolve_max_output_tokens(model, runtime.get("maxOutputTokens"))
+    headers = {"content-type": "application/json"}
+    if runtime.get("authToken"):
+        headers["Authorization"] = f"Bearer {runtime.get('authToken')}"
+    elif runtime.get("apiKey"):
+        headers["Authorization"] = f"Bearer {runtime.get('apiKey')}"
+
+    openai_tools = to_openai_tools(self.tools)
+    request_body: dict[str, Any] = {
+        "model": model,
+        "messages": to_openai_messages(messages),
+        "max_tokens": max_output_tokens,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    if openai_tools:
+        request_body["tools"] = openai_tools
+        request_body["tool_choice"] = "auto"
+
+    request = urllib.request.Request(url, data=json.dumps(request_body).encode("utf-8"), headers=headers, method="POST")
+    text_parts: list[str] = []
+    tool_buffers: dict[int, dict[str, Any]] = {}
+    finish_reason: str | None = None
+    usage: dict[str, Any] | None = None
+    streamed = False
+
+    try:
+        response_ctx = urllib.request.urlopen(request, timeout=120)
+    except urllib.error.HTTPError as error:
+        text = error.read().decode("utf-8", "replace")
+        try:
+            parsed: Any = json.loads(text) if text.strip() else {}
+        except Exception:
+            parsed = {"error": {"message": text.strip()}}
+        raise RuntimeError(extract_error_message(parsed, error.code)) from None
+
+    with response_ctx as response:
+        for _event_name, raw_data in _iter_sse_payloads(response):
+            if raw_data == "[DONE]":
+                break
+            try:
+                data = json.loads(raw_data)
+            except Exception:
+                continue
+            if isinstance(data, dict) and data.get("usage"):
+                usage = normalize_openai_usage(data.get("usage")) or usage
+            choices = data.get("choices") if isinstance(data, dict) else None
+            if not isinstance(choices, list) or not choices:
+                continue
+            choice = choices[0]
+            if not isinstance(choice, dict):
+                continue
+            if choice.get("finish_reason"):
+                finish_reason = str(choice.get("finish_reason"))
+            delta = choice.get("delta") or {}
+            if not isinstance(delta, dict):
+                continue
+            content = delta.get("content")
+            if isinstance(content, str) and content:
+                text_parts.append(content)
+                streamed = True
+                await _emit_text_delta(on_text_delta, content)
+            for call in delta.get("tool_calls") or []:
+                if not isinstance(call, dict):
+                    continue
+                index = int(call.get("index") or 0)
+                current = tool_buffers.setdefault(index, {"id": "", "toolName": "", "arguments": ""})
+                if call.get("id"):
+                    current["id"] = str(call.get("id"))
+                function = call.get("function") or {}
+                if isinstance(function, dict):
+                    if function.get("name"):
+                        current["toolName"] = str(function.get("name"))
+                    if function.get("arguments"):
+                        current["arguments"] = str(current.get("arguments") or "") + str(function.get("arguments"))
+
+    parsed_text = parse_assistant_text("".join(text_parts).strip())
+    diagnostics = {"stopReason": finish_reason, "blockTypes": ["text"] if text_parts else [], "ignoredBlockTypes": []}
+    tool_calls: list[dict[str, Any]] = []
+    for index, current in sorted(tool_buffers.items()):
+        name = str(current.get("toolName") or "")
+        if not name:
+            continue
+        tool_calls.append({
+            "id": str(current.get("id") or f"qwen_tool_{index + 1}"),
+            "toolName": name,
+            "input": _parse_json_arguments(current.get("arguments")),
+        })
+
+    if tool_calls:
+        return {
+            "type": "tool_calls",
+            "calls": tool_calls,
+            "content": parsed_text.get("content") or None,
+            "contentKind": "progress" if parsed_text.get("kind") == "progress" else parsed_text.get("kind"),
+            "diagnostics": diagnostics,
+            "usage": usage,
+            "streamed": streamed,
+        }
+    return {
+        "type": "assistant",
+        "content": parsed_text.get("content") or "",
+        "kind": parsed_text.get("kind"),
+        "diagnostics": diagnostics,
+        "usage": usage,
+        "streamed": streamed,
+    }
+
+
+QwenModelAdapter.stream_next = _qwen_stream_next  # type: ignore[attr-defined]

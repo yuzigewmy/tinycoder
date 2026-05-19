@@ -16,7 +16,7 @@ from .local_tool_shortcuts import parse_local_tool_shortcut
 from .permissions import PermissionManager
 from .prompt import build_system_prompt
 from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, rename_session, save_session
-from .tui.markdown import is_markdown_path, render_markdownish
+from .tui.markdown import MarkdownStreamPrinter, is_markdown_path, render_markdownish
 from .ui import render_banner, render_permission_prompt
 from .utils.token_estimator import compute_context_stats
 
@@ -110,15 +110,15 @@ async def run_tty_app(args: dict[str, Any]) -> None:
             restored_collapse = await load_context_collapse_state(cwd, session_id)
             if restored_collapse and args.get("contextCollapseState") is not None:
                 args["contextCollapseState"].update(restored_collapse)
-            print(f"Resumed session {session_id}.")
+            print(f"已恢复会话 {session_id}。")
         else:
-            print(f"Session {resume_target} not found.")
+            print(f"未找到会话 {resume_target}。")
     elif resume_target == "picker":
         sessions = await list_sessions(cwd)
         if sessions:
             for i, meta in enumerate(sessions, 1):
                 print(f"{i}. {meta.get('id')}  {meta.get('title') or '(untitled)'}")
-            chosen = input("resume number or id: ").strip()
+            chosen = input("输入要恢复的序号或会话 ID: ").strip()
             target = None
             if chosen.isdigit() and 1 <= int(chosen) <= len(sessions):
                 target = sessions[int(chosen) - 1]["id"]
@@ -129,10 +129,10 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                 if loaded:
                     messages[:] = [messages[0], *loaded]
                     session_id = target
-                    print(f"Resumed session {session_id}.")
+                    print(f"已恢复会话 {session_id}。")
 
     print(render_banner(args.get("runtime") or {}, cwd))
-    print("Type /help for commands, /exit to quit.")
+    print("输入 /help 查看中文命令说明，输入 /exit 退出。")
 
     while True:
         try:
@@ -151,18 +151,18 @@ async def run_tty_app(args: dict[str, Any]) -> None:
             if input_text == "/new":
                 await clear_session(cwd, session_id)
                 messages[:] = [messages[0]]
-                print("Started a new session.")
+                print("已开始新会话。")
                 continue
             if input_text.startswith("/rename "):
                 title = input_text[len("/rename "):].strip()
                 if title:
                     ok = await rename_session(cwd, session_id, title)
-                    print("Renamed." if ok else "Session not found.")
+                    print("已重命名。" if ok else "未找到会话。")
                 continue
             if input_text == "/resume":
                 sessions = await list_sessions(cwd)
                 if not sessions:
-                    print("No saved sessions.")
+                    print("暂无已保存会话。")
                 else:
                     for meta in sessions[:20]:
                         print(f"{meta.get('id')}  {meta.get('title') or '(untitled)'}")
@@ -171,30 +171,30 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                 target = input_text[len("/resume "):].strip()
                 loaded = await load_session(cwd, target)
                 if not loaded:
-                    print("Session not found.")
+                    print("未找到会话。")
                 else:
                     messages[:] = [messages[0], *loaded]
                     session_id = target
-                    print(f"Resumed session {session_id}.")
+                    print(f"已恢复会话 {session_id}。")
                 continue
             if input_text == "/fork":
                 forked = await fork_session(cwd, session_id)
-                print(f"Forked session: {forked}" if forked else "Nothing to fork.")
+                print(f"已分叉会话: {forked}" if forked else "当前没有可分叉内容。")
                 continue
             if input_text == "/compact":
                 result = await manual_compact(messages, args["model"])
                 if not result:
-                    print("Nothing to compact.")
+                    print("暂无可压缩内容。")
                     continue
                 messages[:] = result["messages"]
                 await append_compact_boundary(cwd, session_id, result.get("summaryText") or "", "manual", result.get("preTokens") or 0, result.get("postTokens") or 0, result.get("retainedMessages") or [])
-                print("Context compacted.")
+                print("上下文已压缩。")
                 continue
             if input_text == "/collapse":
                 runtime = args.get("runtime") or {}
                 model_name = runtime.get("model") or ""
                 if not model_name:
-                    print("No model configured. Cannot collapse context.")
+                    print("未配置模型，无法进行上下文折叠。")
                     continue
                 state = args.get("contextCollapseState") or create_context_collapse_state()
                 result = await apply_context_collapse_if_needed(messages, model_name, args["model"], state, {"utilizationThreshold": 0, "reason": "manual"})
@@ -202,7 +202,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     args["contextCollapseState"].update(result["state"])
                 for span in result.get("spans") or []:
                     await append_context_collapse_span(cwd, session_id, span)
-                print(f"Collapsed {len(result.get('spans') or [])} span(s)." if result.get("collapsed") else "Nothing safe to collapse.")
+                print(f"已折叠 {len(result.get('spans') or [])} 个上下文片段。" if result.get("collapsed") else "暂无可安全折叠的上下文。")
                 continue
             if input_text == "/snip":
                 runtime = args.get("runtime") or {}
@@ -213,9 +213,9 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     messages[:] = result["messages"]
                     if result.get("boundaryMessage"):
                         await append_snip_boundary(cwd, session_id, result["boundaryMessage"])
-                    print("Snipped context.")
+                    print("已裁剪上下文。")
                 else:
-                    print("Nothing safe to snip.")
+                    print("暂无可安全裁剪的上下文。")
                 continue
             if input_text == "/background":
                 tasks = list_background_tasks()
@@ -241,6 +241,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
             runtime = await _refresh_runtime(args)
             messages.append({"role": "user", "content": input_text})
             permissions.begin_turn()
+            stream_printer = MarkdownStreamPrinter()
             try:
                 messages[:] = await run_agent_turn({
                     "model": args["model"],
@@ -253,10 +254,12 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     "contextCollapseState": args.get("contextCollapseState"),
                     "onToolStart": lambda name, inp: print(f"[tool] {name} {inp}"),
                     "onToolResult": lambda name, out, is_error: print(f"[tool:{name} {'err' if is_error else 'ok'}]\n{out}"),
+                    "onAssistantDelta": stream_printer.write,
                     "onAssistantMessage": lambda content: print(f"\n{_render_assistant_output(content)}\n"),
                     "onProgressMessage": lambda content: print(f"\n[progress]\n{_render_assistant_output(content)}\n"),
                 })
             finally:
+                stream_printer.finish()
                 permissions.end_turn()
                 await save_session(cwd, session_id, messages, already_saved_count)
         except Exception as error:

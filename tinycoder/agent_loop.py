@@ -135,12 +135,18 @@ async def run_agent_turn(args: dict[str, Any]) -> list[dict[str, Any]]:
                     latest_stats = compute_context_stats(messages, model_name)
                     await _maybe_call(args.get("onContextStats"), latest_stats)
 
-        next_step = await args["model"].next(model_messages)
+        model_obj = args["model"]
+        stream_next = getattr(model_obj, "stream_next", None)
+        if stream_next is not None and args.get("onAssistantDelta") is not None:
+            next_step = await stream_next(model_messages, on_text_delta=args.get("onAssistantDelta"))
+        else:
+            next_step = await model_obj.next(model_messages)
         if next_step.get("type") == "assistant":
             content = str(next_step.get("content") or "")
             is_empty = is_empty_assistant_response(content)
             if not is_empty and should_treat_assistant_as_progress({"kind": next_step.get("kind"), "content": content, "sawToolResultThisTurn": saw_tool_result_this_turn}):
-                await _maybe_call(args.get("onProgressMessage"), content)
+                if not next_step.get("streamed"):
+                    await _maybe_call(args.get("onProgressMessage"), content)
                 append_thinking_blocks(next_step.get("thinkingBlocks"))
                 messages = [*messages, {"role": "assistant_progress", "content": content}]
                 push_continuation_prompt("Continue from your progress update. You have already used tools in this turn, so treat plain status text as progress, not a final answer. Respond with the next concrete tool call, code change, or an explicit <final> answer only if the task is truly complete." if saw_tool_result_this_turn and next_step.get("kind") != "progress" else "Continue immediately from your <progress> update with concrete tool calls, code changes, or an explicit <final> answer only if the task is complete.")
@@ -176,18 +182,21 @@ async def run_agent_turn(args: dict[str, Any]) -> list[dict[str, Any]]:
 
             assistant_message = {"role": "assistant", "content": content}
             append_thinking_blocks(next_step.get("thinkingBlocks"))
-            await _maybe_call(args.get("onAssistantMessage"), content)
+            if not next_step.get("streamed"):
+                await _maybe_call(args.get("onAssistantMessage"), content)
             return [*messages, with_provider_usage(assistant_message, next_step.get("usage"))]
 
         append_thinking_blocks(next_step.get("thinkingBlocks"))
         if next_step.get("content"):
             content = str(next_step.get("content"))
             if next_step.get("contentKind") == "progress":
-                await _maybe_call(args.get("onProgressMessage"), content)
+                if not next_step.get("streamed"):
+                    await _maybe_call(args.get("onProgressMessage"), content)
                 messages = [*messages, with_provider_usage({"role": "assistant_progress", "content": content}, next_step.get("usage"))]
                 push_continuation_prompt("Continue immediately from your <progress> update with concrete tool calls, code changes, or an explicit <final> answer only if the task is complete.")
             else:
-                await _maybe_call(args.get("onAssistantMessage"), content)
+                if not next_step.get("streamed"):
+                    await _maybe_call(args.get("onAssistantMessage"), content)
                 usage = None if next_step.get("calls") else next_step.get("usage")
                 messages = [*messages, with_provider_usage({"role": "assistant", "content": content}, usage)]
         calls = next_step.get("calls") or []

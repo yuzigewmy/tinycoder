@@ -220,3 +220,159 @@ toAnthropicMessages = to_anthropic_messages
 parseAssistantText = parse_assistant_text
 normalizeAnthropicUsage = normalize_anthropic_usage
 AnthropicAdapter = AnthropicModelAdapter
+
+
+
+async def _emit_text_delta(callback: Any | None, delta: str) -> None:
+    if callback is None or not delta:
+        return
+    result = callback(delta)
+    if hasattr(result, "__await__"):
+        await result
+
+
+def _iter_sse_payloads(response: Any):
+    event_name: str | None = None
+    data_lines: list[str] = []
+    for raw_line in response:
+        line = raw_line.decode("utf-8", "replace").rstrip("\n")
+        if line.endswith("\r"):
+            line = line[:-1]
+        if not line:
+            if data_lines:
+                yield event_name, "\n".join(data_lines)
+            event_name = None
+            data_lines = []
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("event:"):
+            event_name = line[len("event:"):].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[len("data:"):].strip())
+    if data_lines:
+        yield event_name, "\n".join(data_lines)
+
+
+async def _anthropic_stream_next(self: AnthropicModelAdapter, messages: list[dict[str, Any]], on_text_delta: Any | None = None) -> dict[str, Any]:
+    runtime = await self.get_runtime_config()
+    payload = to_anthropic_messages(messages)
+    base_url = str(runtime.get("baseUrl") or "https://api.anthropic.com").rstrip("/")
+    url = f"{base_url}/v1/messages"
+    max_output_tokens = resolve_max_output_tokens(str(runtime.get("model") or ""), runtime.get("maxOutputTokens"))
+    headers = {"content-type": "application/json", "anthropic-version": "2023-06-01"}
+    if runtime.get("authToken"):
+        headers["Authorization"] = f"Bearer {runtime.get('authToken')}"
+    elif runtime.get("apiKey"):
+        headers["x-api-key"] = str(runtime.get("apiKey"))
+    request_body = {
+        "model": runtime.get("model"),
+        "system": payload["system"],
+        "messages": payload["messages"],
+        "tools": [{"name": tool.name, "description": tool.description, "input_schema": tool.input_schema} for tool in self.tools.list()],
+        "max_tokens": max_output_tokens,
+        "stream": True,
+    }
+
+    request = urllib.request.Request(url, data=json.dumps(request_body).encode("utf-8"), headers=headers, method="POST")
+    text_parts: list[str] = []
+    tool_calls: list[dict[str, Any]] = []
+    thinking_blocks: list[dict[str, Any]] = []
+    block_types: list[str] = []
+    ignored_block_types: set[str] = set()
+    content_blocks: dict[int, dict[str, Any]] = {}
+    stop_reason: str | None = None
+    usage: dict[str, Any] | None = None
+    streamed = False
+
+    try:
+        response_ctx = urllib.request.urlopen(request, timeout=120)
+    except urllib.error.HTTPError as error:
+        text = error.read().decode("utf-8", "replace")
+        try:
+            parsed: Any = json.loads(text) if text.strip() else {}
+        except Exception:
+            parsed = {"error": {"message": text.strip()}}
+        raise RuntimeError(extract_error_message(parsed, error.code)) from None
+
+    with response_ctx as response:
+        for event_name, raw_data in _iter_sse_payloads(response):
+            if raw_data == "[DONE]":
+                continue
+            try:
+                data = json.loads(raw_data)
+            except Exception:
+                continue
+            event_type = str(data.get("type") or event_name or "")
+            if event_type == "error":
+                raise RuntimeError(extract_error_message(data, 500))
+            if event_type == "message_start":
+                usage = normalize_anthropic_usage((data.get("message") or {}).get("usage"))
+                continue
+            if event_type == "message_delta":
+                delta = data.get("delta") or {}
+                if isinstance(delta, dict) and delta.get("stop_reason"):
+                    stop_reason = str(delta.get("stop_reason"))
+                if isinstance(data.get("usage"), dict):
+                    usage = normalize_anthropic_usage(data.get("usage")) or usage
+                continue
+            if event_type == "content_block_start":
+                index = int(data.get("index") or 0)
+                block = data.get("content_block") or {}
+                if not isinstance(block, dict):
+                    block = {}
+                block_type = str(block.get("type") or "")
+                block_types.append(block_type)
+                content_blocks[index] = dict(block)
+                if block_type == "text" and isinstance(block.get("text"), str) and block.get("text"):
+                    delta_text = block["text"]
+                    text_parts.append(delta_text)
+                    streamed = True
+                    await _emit_text_delta(on_text_delta, delta_text)
+                continue
+            if event_type == "content_block_delta":
+                index = int(data.get("index") or 0)
+                delta = data.get("delta") or {}
+                if not isinstance(delta, dict):
+                    continue
+                block = content_blocks.setdefault(index, {})
+                delta_type = str(delta.get("type") or "")
+                if delta_type == "text_delta" and isinstance(delta.get("text"), str):
+                    delta_text = delta["text"]
+                    text_parts.append(delta_text)
+                    streamed = True
+                    await _emit_text_delta(on_text_delta, delta_text)
+                elif delta_type == "input_json_delta" and isinstance(delta.get("partial_json"), str):
+                    block["partial_json"] = str(block.get("partial_json") or "") + delta["partial_json"]
+                elif delta_type == "thinking_delta" and isinstance(delta.get("thinking"), str):
+                    block["thinking"] = str(block.get("thinking") or "") + delta["thinking"]
+                else:
+                    ignored_block_types.add(delta_type)
+                continue
+            if event_type == "content_block_stop":
+                index = int(data.get("index") or 0)
+                block = content_blocks.get(index) or {}
+                block_type = str(block.get("type") or "")
+                if block_type == "tool_use" and isinstance(block.get("id"), str) and isinstance(block.get("name"), str):
+                    raw_input = block.get("partial_json") if "partial_json" in block else block.get("input")
+                    if isinstance(raw_input, str):
+                        try:
+                            parsed_input = json.loads(raw_input) if raw_input.strip() else {}
+                        except Exception:
+                            parsed_input = {"_raw": raw_input}
+                    else:
+                        parsed_input = raw_input or {}
+                    tool_calls.append({"id": block["id"], "toolName": block["name"], "input": parsed_input})
+                elif block_type in {"thinking", "redacted_thinking"}:
+                    thinking_blocks.append(block)
+                continue
+
+    parsed_text = parse_assistant_text("".join(text_parts).strip())
+    diagnostics = {"stopReason": stop_reason, "blockTypes": block_types, "ignoredBlockTypes": sorted(ignored_block_types)}
+    if tool_calls:
+        step = {"type": "tool_calls", "calls": tool_calls, "content": parsed_text.get("content") or None, "contentKind": "progress" if parsed_text.get("kind") == "progress" else None, "thinkingBlocks": thinking_blocks, "diagnostics": diagnostics, "usage": usage, "streamed": streamed}
+        return {k: v for k, v in step.items() if v is not None and v != []}
+    return {"type": "assistant", "content": parsed_text.get("content") or "", "kind": parsed_text.get("kind"), "thinkingBlocks": thinking_blocks, "diagnostics": diagnostics, "usage": usage, "streamed": streamed}
+
+
+AnthropicModelAdapter.stream_next = _anthropic_stream_next  # type: ignore[attr-defined]

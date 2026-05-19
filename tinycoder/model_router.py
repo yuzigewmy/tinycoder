@@ -44,6 +44,26 @@ class ModelRouter:
     async def current_runtime(self) -> dict[str, Any]:
         return await self.get_runtime_config()
 
+    async def stream_next(self, messages: list[dict[str, Any]], on_text_delta: Any | None = None) -> dict[str, Any]:
+        if os.environ.get("TINYCODER_MODEL_MODE") == "mock":
+            result = await self._mock.next(messages)
+            if on_text_delta and result.get("type") == "assistant" and result.get("content"):
+                maybe = on_text_delta(str(result.get("content") or ""))
+                if hasattr(maybe, "__await__"):
+                    await maybe
+                result = dict(result)
+                result["streamed"] = True
+            return result
+        if os.environ.get("TINYCODER_STREAM", "1").strip().lower() in {"0", "false", "off", "no"}:
+            return await self.next(messages)
+        runtime = await self.get_runtime_config()
+        provider = self._provider_key(str(runtime.get("provider") or "anthropic"))
+        adapter = self._get_adapter(provider)
+        stream_next = getattr(adapter, "stream_next", None)
+        if stream_next is None:
+            return await adapter.next(messages)
+        return await stream_next(messages, on_text_delta=on_text_delta)
+
     async def next(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         if os.environ.get("TINYCODER_MODEL_MODE") == "mock":
             return await self._mock.next(messages)

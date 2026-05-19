@@ -175,7 +175,29 @@ def render_status_line(runtime: dict[str, Any], cwd: str, stats: dict[str, Any] 
 def render_banner(runtime: dict[str, Any] | None = None, cwd: str | None = None) -> str:
     runtime = runtime or {}
     cwd = cwd or os.getcwd()
-    return render_panel("tinycoder", f"model: {runtime.get('model') or 'mock'}\ncwd: {cwd}")
+    provider = str(runtime.get("provider") or "mock")
+    model = str(runtime.get("model") or "mock")
+    art = "\n".join([
+        "=======  ||  |\\ |  \\ //   =====  =====  ||==\\  =====  =====",
+        "  ||     ||  ||\\|   \\//   ||      ||   || ||  || ||     ||  ||",
+        "  ||     ||  || \\    ||    ||      ||   || ||  || ||==   ||==//",
+        "  ||     ||  ||  |   ||    ||      ||   || ||  || ||     || \\",
+        "  ||     ||  ||  |   ||     =====  =====  ||==//  =====  ||  \\",
+    ])
+    body = "\n".join([
+        art,
+        "",
+        "终端 AI 编程助手，面向本地代码仓库的多步骤开发任务。",
+        "核心能力：代码理解、文件检索、代码修改、命令执行。",
+        "扩展能力：会话管理、模型切换、MCP、Skills、Markdown 渲染。",
+        "交互体验：支持模型回复流式输出，适合本地项目和 Linux 服务器使用。",
+        "",
+        f"当前供应商: {provider}",
+        f"当前模型: {model}",
+        f"当前目录: {cwd}",
+        "作者: Kerinol.C",
+    ])
+    return render_panel("TinyCoder", body)
 
 
 def render_footer_bar(text: str = "Enter send | /help commands | Ctrl+C exit") -> str:

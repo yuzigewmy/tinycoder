@@ -68,6 +68,7 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"name": "/ls", "usage": "/ls [path]", "description": "List files in a directory."},
     {"name": "/grep", "usage": "/grep <pattern>::[path]", "description": "Search text in files."},
     {"name": "/read", "usage": "/read <path>", "description": "Read a file directly."},
+    {"name": "/md", "usage": "/md <path>", "description": "Read and render a Markdown file in the terminal."},
     {"name": "/write", "usage": "/write <path>::<content>", "description": "Write a file directly."},
     {"name": "/modify", "usage": "/modify <path>::<content>", "description": "Replace a file, showing a reviewable diff before applying it."},
     {"name": "/edit", "usage": "/edit <path>::<search>::<replace>", "description": "Edit a file by exact replacement."},
@@ -287,7 +288,7 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
         if not tools:
             return "No tool registry available."
         tool_lines = [f"{tool.name}  {tool.description}" for tool in tools.list()]
-        shortcuts = ["/ls [path]", "/grep <pattern>::[path]", "/read <path>", "/write <path>::<content>", "/modify <path>::<content>", "/edit <path>::<search>::<replace>", "/patch <path>::<search>::<replace>...", "/cmd [cwd::]<command> [args...]"]
+        shortcuts = ["/ls [path]", "/grep <pattern>::[path]", "/read <path>", "/md <path>", "/write <path>::<content>", "/modify <path>::<content>", "/edit <path>::<search>::<replace>", "/patch <path>::<search>::<replace>...", "/cmd [cwd::]<command> [args...]"]
         return "Tools:\n" + "\n".join(tool_lines) + "\n\nShortcuts:\n" + "\n".join(shortcuts)
     if input_text == "/status":
         return await _format_status()

@@ -26,6 +26,12 @@ def parse_local_tool_shortcut(input_text: str) -> LocalToolShortcut | None:
             return None
         return {"toolName": "read_file", "input": {"path": file_path}}
 
+    if text.startswith("/md "):
+        file_path = text[len("/md "):].strip()
+        if not file_path:
+            return None
+        return {"toolName": "read_file", "input": {"path": file_path}, "renderMarkdown": True}
+
     if text.startswith("/write "):
         payload = text[len("/write "):]
         split_at = payload.find("::")

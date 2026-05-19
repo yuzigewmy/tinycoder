@@ -16,6 +16,7 @@ from .local_tool_shortcuts import parse_local_tool_shortcut
 from .permissions import PermissionManager
 from .prompt import build_system_prompt
 from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, rename_session, save_session
+from .tui.markdown import is_markdown_path, render_markdownish
 from .ui import render_banner, render_permission_prompt
 from .utils.token_estimator import compute_context_stats
 
@@ -49,6 +50,19 @@ def _last_assistant_content(messages: list[dict[str, Any]]) -> str | None:
         if message.get("role") == "assistant":
             return str(message.get("content") or "")
     return None
+
+
+def _render_assistant_output(content: Any) -> str:
+    return render_markdownish(str(content or ""))
+
+
+def _render_shortcut_output(shortcut: dict[str, Any], output: Any) -> str:
+    text = str(output or "")
+    input_value = shortcut.get("input") if isinstance(shortcut.get("input"), dict) else {}
+    path = str(input_value.get("path") or "")
+    if shortcut.get("renderMarkdown") or (shortcut.get("toolName") == "read_file" and is_markdown_path(path)):
+        return render_markdownish(text)
+    return text
 
 
 SENSITIVE_MODEL_COMMANDS = ("/apikey ", "/use ")
@@ -216,7 +230,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
             shortcut = parse_local_tool_shortcut(input_text)
             if shortcut:
                 result = await args["tools"].execute(shortcut["toolName"], shortcut.get("input"), {"cwd": cwd, "permissions": permissions})
-                print(str(result.get("output") or ""))
+                print(_render_shortcut_output(shortcut, result.get("output")))
                 continue
             if input_text.startswith("/"):
                 matches = find_matching_slash_commands(input_text)
@@ -239,8 +253,8 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     "contextCollapseState": args.get("contextCollapseState"),
                     "onToolStart": lambda name, inp: print(f"[tool] {name} {inp}"),
                     "onToolResult": lambda name, out, is_error: print(f"[tool:{name} {'err' if is_error else 'ok'}]\n{out}"),
-                    "onAssistantMessage": lambda content: print(f"\n{content}\n"),
-                    "onProgressMessage": lambda content: print(f"\n[progress] {content}\n"),
+                    "onAssistantMessage": lambda content: print(f"\n{_render_assistant_output(content)}\n"),
+                    "onProgressMessage": lambda content: print(f"\n[progress]\n{_render_assistant_output(content)}\n"),
                 })
             finally:
                 permissions.end_turn()

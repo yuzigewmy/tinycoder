@@ -18,6 +18,7 @@ from .prompt import build_system_prompt
 from .session import fork_session
 from .tools.index import create_default_tool_registry, hydrate_mcp_tools
 from .tty_app import run_tty_app
+from .tui.markdown import render_markdownish
 from .ui import render_banner
 from .utils.tool_result_storage import create_content_replacement_state
 
@@ -155,7 +156,7 @@ async def main(argv: list[str] | None = None) -> None:
                 permissions.end_turn()
             last = next((m for m in reversed(messages) if m.get("role") == "assistant"), None)
             if last:
-                print(f"\n{last.get('content')}\n")
+                print(f"\n{render_markdownish(str(last.get('content') or ''))}\n")
     finally:
         await tools.dispose()
 

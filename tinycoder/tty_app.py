@@ -79,6 +79,10 @@ def _render_progress_node(content: Any) -> str:
     return f"[thinking] {preview}" if preview else "[thinking] working..."
 
 
+def _hide_progress_node(content: Any) -> None:
+    return None
+
+
 def _render_tool_start(name: Any, input_value: Any) -> None:
     preview = _single_line_preview(input_value)
     suffix = f" {preview}" if preview else ""
@@ -563,7 +567,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     "onToolResult": _render_tool_result,
                     "onAssistantDelta": stream_printer.write,
                     "onAssistantMessage": lambda content: print(f"\n{_render_assistant_output(content)}\n"),
-                    "onProgressMessage": lambda content: print(_render_progress_node(content)),
+                    "onProgressMessage": _hide_progress_node,
                 })
             except KeyboardInterrupt:
                 interrupted = True

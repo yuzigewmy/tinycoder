@@ -23,6 +23,27 @@ from .ui import render_banner
 from .utils.tool_result_storage import create_content_replacement_state
 
 
+def analyze_error(error: BaseException) -> str:
+    text = str(error).strip() or error.__class__.__name__
+    lower = text.lower()
+    if "ssl" in lower or "urlopen" in lower or "eof occurred" in lower:
+        reason = "模型接口连接在 HTTPS/TLS 读取阶段被提前断开，可能是 Base URL 协议或路径错误、代理/VPN 中断、供应商网关临时断连。"
+        suggestion = "检查当前 provider、baseUrl 和网络代理；本地 OpenAI 兼容服务通常使用 `http://.../v1`。"
+    elif "no model configured" in lower:
+        reason = "当前没有配置模型名称。"
+        suggestion = "使用 `/model <model-name>` 或 `/use <provider> <model> [api-key] [base-url]` 设置。"
+    elif "no auth configured" in lower or "api key" in lower or "auth" in lower:
+        reason = "当前缺少 API key 或认证 token。"
+        suggestion = "使用 `/apikey <key>` 或 `/use <provider> <model> <api-key> [base-url]` 设置。"
+    elif "unsupported model provider" in lower:
+        reason = "当前模型供应商没有被支持或未添加自定义配置。"
+        suggestion = "使用 `/providers` 查看，或 `/provider add` 添加 OpenAI 兼容供应商。"
+    else:
+        reason = "当前步骤执行失败，可能与配置、网络、权限、文件路径或外部工具有关。"
+        suggestion = "检查刚才执行到的步骤和相关配置后重试。"
+    return f"当前步骤没有完成。\n\n可能原因：{reason}\n\n建议处理：{suggestion}\n\n技术摘要：{text}"
+
+
 async def main(argv: list[str] | None = None) -> None:
     cwd = os.getcwd()
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -129,7 +150,7 @@ async def main(argv: list[str] | None = None) -> None:
                     print("\n未识别命令。" + ("你是不是想输入：\n" + "\n".join(matches) if matches else "输入 /help 查看可用命令。") + "\n")
                     continue
             except Exception as error:
-                print(f"\n{error}\n")
+                print(f"\n{analyze_error(error)}\n")
                 continue
 
             await refresh_system_prompt()
@@ -151,7 +172,7 @@ async def main(argv: list[str] | None = None) -> None:
                     "contextCollapseState": context_collapse_state,
                 })
             except Exception as error:
-                messages.append({"role": "assistant", "content": f"请求失败: {error}"})
+                messages.append({"role": "assistant", "content": analyze_error(error)})
             finally:
                 permissions.end_turn()
             last = next((m for m in reversed(messages) if m.get("role") == "assistant"), None)
@@ -167,7 +188,7 @@ def main_sync(argv: list[str] | None = None) -> None:
     except KeyboardInterrupt:
         pass
     except Exception as error:
-        print(error, file=sys.stderr)
+        print(analyze_error(error), file=sys.stderr)
         raise SystemExit(1)
 
 

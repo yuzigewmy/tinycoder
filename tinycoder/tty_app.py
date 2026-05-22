@@ -83,6 +83,68 @@ def _hide_progress_node(content: Any) -> None:
     return None
 
 
+class AssistantStreamFilter:
+    def __init__(self, printer: MarkdownStreamPrinter) -> None:
+        self.printer = printer
+        self.buffer = ""
+        self.mode: str | None = None
+
+    def write(self, delta: str) -> None:
+        if not delta:
+            return
+        self.buffer += str(delta)
+        while self.buffer:
+            if self.mode == "progress":
+                end = self.buffer.find("</progress>")
+                if end < 0:
+                    self.buffer = self.buffer[-20:]
+                    return
+                self.buffer = self.buffer[end + len("</progress>"):]
+                self.mode = None
+                continue
+
+            lowered = self.buffer.lstrip().lower()
+            leading = len(self.buffer) - len(self.buffer.lstrip())
+            if lowered.startswith("<progress>"):
+                self.buffer = self.buffer[leading + len("<progress>"):]
+                self.mode = "progress"
+                continue
+            if lowered.startswith("[progress]"):
+                self.buffer = self.buffer[leading + len("[progress]"):]
+                self.mode = "progress"
+                continue
+            if lowered.startswith("<final>"):
+                self.buffer = self.buffer[leading + len("<final>"):]
+                self.mode = "final"
+                continue
+            if lowered.startswith("[final]"):
+                self.buffer = self.buffer[leading + len("[final]"):]
+                self.mode = "final"
+                continue
+
+            if self.mode == "final":
+                final_end = self.buffer.lower().find("</final>")
+                if final_end >= 0:
+                    self.printer.write(self.buffer[:final_end])
+                    self.buffer = self.buffer[final_end + len("</final>"):]
+                    self.mode = None
+                    continue
+                self.printer.write(self.buffer)
+                self.buffer = ""
+                return
+
+            if self.buffer.lstrip().startswith("<") or self.buffer.lstrip().startswith("["):
+                if len(self.buffer.lstrip()) < len("<progress>"):
+                    return
+            self.printer.write(self.buffer)
+            self.buffer = ""
+
+    def finish(self) -> None:
+        if self.mode not in {"progress"} and self.buffer:
+            self.printer.write(self.buffer)
+        self.buffer = ""
+
+
 def _render_tool_start(name: Any, input_value: Any) -> None:
     preview = _single_line_preview(input_value)
     suffix = f" {preview}" if preview else ""
@@ -94,6 +156,30 @@ def _render_tool_result(name: Any, output: Any, is_error: bool) -> None:
     preview = _single_line_preview(output)
     suffix = f" - {preview}" if preview else ""
     print(f"[tool:{name} {status}]{suffix}")
+
+
+def _analyze_error(error: BaseException) -> str:
+    text = str(error).strip() or error.__class__.__name__
+    lower = text.lower()
+    if "ssl" in lower or "urlopen" in lower or "eof occurred" in lower:
+        reason = "模型接口连接在 HTTPS/TLS 读取阶段被提前断开。常见原因是 Base URL 协议或路径配置不正确、代理/VPN 中断、供应商网关临时断连，或本地服务只支持 http 却配置成了 https。"
+        suggestion = "建议先检查 `/status` 和 `/base-url`，本地 OpenAI 兼容服务通常使用 `http://.../v1`。"
+    elif "no model configured" in lower:
+        reason = "当前没有可用模型配置，Agent 无法发起模型请求。"
+        suggestion = "可以使用 `/model <model-name>` 或 `/use <provider> <model> [api-key] [base-url]` 设置。"
+    elif "no auth configured" in lower or "api key" in lower or "auth" in lower:
+        reason = "当前供应商缺少 API key 或认证 token。"
+        suggestion = "可以使用 `/apikey <key>` 或 `/use <provider> <model> <api-key> [base-url]` 设置。"
+    elif "unsupported model provider" in lower:
+        reason = "当前选择的模型供应商没有被正确配置。"
+        suggestion = "可以使用 `/providers` 查看可用供应商，或用 `/provider add <name> <model> <api-key> <base-url>` 添加 OpenAI 兼容供应商。"
+    elif "timeout" in lower or "timed out" in lower:
+        reason = "请求等待时间过长，可能是模型服务响应慢、网络不稳定或工具命令执行超时。"
+        suggestion = "可以重试一次，或检查服务状态、网络代理和当前命令是否卡住。"
+    else:
+        reason = "当前步骤执行失败，通常与配置、网络、权限、文件路径或外部工具返回异常有关。"
+        suggestion = "Agent 已停止当前步骤，建议根据刚才执行到的工具或命令检查相关配置后重试。"
+    return f"当前步骤没有完成。\n\n可能原因：{reason}\n\n建议处理：{suggestion}\n\n技术摘要：{text}"
 
 
 SENSITIVE_MODEL_COMMANDS = ("/apikey ", "/use ")
@@ -552,9 +638,10 @@ async def run_tty_app(args: dict[str, Any]) -> None:
             messages.append({"role": "user", "content": input_text})
             permissions.begin_turn()
             stream_printer = MarkdownStreamPrinter()
+            stream_filter = AssistantStreamFilter(stream_printer)
             interrupted = False
             try:
-                messages[:] = await run_agent_turn({
+                turn_args = {
                     "model": args["model"],
                     "tools": args["tools"],
                     "messages": messages,
@@ -565,21 +652,39 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     "contextCollapseState": args.get("contextCollapseState"),
                     "onToolStart": _render_tool_start,
                     "onToolResult": _render_tool_result,
-                    "onAssistantDelta": stream_printer.write,
+                    "onAssistantDelta": stream_filter.write,
                     "onAssistantMessage": lambda content: print(f"\n{_render_assistant_output(content)}\n"),
                     "onProgressMessage": _hide_progress_node,
-                })
+                }
+                try:
+                    messages[:] = await run_agent_turn(turn_args)
+                except Exception as first_error:
+                    recovery_prompt = (
+                        "The previous step failed before completion. Diagnose the failure, try a safe alternative if possible, "
+                        "and only if it cannot be fixed, explain the likely cause and next step in user-friendly language. "
+                        "Do not repeat the raw traceback or raw exception as the main answer. "
+                        f"Error summary: {first_error}"
+                    )
+                    messages.append({"role": "user", "content": recovery_prompt})
+                    try:
+                        turn_args["messages"] = messages
+                        messages[:] = await run_agent_turn(turn_args)
+                    except Exception as second_error:
+                        analysis = _analyze_error(second_error)
+                        messages.append({"role": "assistant", "content": analysis})
+                        print(f"\n{_render_assistant_output(analysis)}\n")
             except KeyboardInterrupt:
                 interrupted = True
                 messages.append({"role": "assistant", "content": INTERRUPTED_MESSAGE})
             finally:
+                stream_filter.finish()
                 stream_printer.finish()
                 if interrupted:
                     print(f"\n{INTERRUPTED_MESSAGE}\n")
                 permissions.end_turn()
                 await save_session(cwd, session_id, messages, already_saved_count)
         except Exception as error:
-            print(f"error: {error}")
+            print(f"\n{_render_assistant_output(_analyze_error(error))}\n")
     try:
         save_history_entries(history, cwd, session_id)
     except Exception:

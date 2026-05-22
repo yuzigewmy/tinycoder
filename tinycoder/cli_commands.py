@@ -41,6 +41,7 @@ PROVIDER_ALIASES = {
     "dashscope": "qwen",
     "aliyun": "qwen",
 }
+RESERVED_PROVIDER_NAMES = {"anthropic", "claude", "qwen", "dashscope", "aliyun"}
 
 SLASH_COMMANDS: list[dict[str, str]] = [
     {"name": "/help", "usage": "/help", "description": "查看所有可用命令。"},
@@ -48,7 +49,8 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"name": "/status", "usage": "/status", "description": "查看当前模型、供应商、API Key 状态和配置来源。"},
     {"name": "/providers", "usage": "/providers", "description": "查看支持的模型供应商。"},
     {"name": "/provider", "usage": "/provider", "description": "查看当前模型供应商。"},
-    {"name": "/provider", "usage": "/provider <anthropic|qwen>", "description": "切换模型供应商并持久化保存。"},
+    {"name": "/provider", "usage": "/provider <anthropic|qwen|custom>", "description": "切换模型供应商并持久化保存。"},
+    {"name": "/provider", "usage": "/provider add <name> <model> <api-key> <base-url>", "description": "添加 OpenAI 兼容自定义模型供应商。"},
     {"name": "/model", "usage": "/model", "description": "查看当前模型名称。"},
     {"name": "/model", "usage": "/model <model-name>", "description": "切换当前供应商的模型名称并持久化保存。"},
     {"name": "/apikey", "usage": "/apikey", "description": "脱敏查看当前供应商的 API Key。"},
@@ -120,9 +122,7 @@ def mask_secret(value: str | None) -> str:
 def normalize_provider(provider: str | None) -> str:
     key = (provider or "anthropic").strip().lower()
     normalized = PROVIDER_ALIASES.get(key)
-    if not normalized:
-        raise RuntimeError(f"不支持的模型供应商: {provider}. 可选: {', '.join(SUPPORTED_MODEL_PROVIDERS)}")
-    return normalized
+    return normalized or key
 
 
 async def _effective_env() -> dict[str, str]:
@@ -137,7 +137,19 @@ async def _current_provider() -> str:
 
 
 def _provider_info(provider: str) -> dict[str, str]:
-    return SUPPORTED_MODEL_PROVIDERS[normalize_provider(provider)]
+    normalized = normalize_provider(provider)
+    if normalized in SUPPORTED_MODEL_PROVIDERS:
+        return SUPPORTED_MODEL_PROVIDERS[normalized]
+    env_prefix = normalized.upper().replace("-", "_")
+    return {
+        "label": f"Custom OpenAI-compatible ({normalized})",
+        "model_env": f"TINYCODER_{env_prefix}_MODEL",
+        "api_key_env": f"TINYCODER_{env_prefix}_API_KEY",
+        "auth_token_env": f"TINYCODER_{env_prefix}_AUTH_TOKEN",
+        "base_url_env": f"TINYCODER_{env_prefix}_BASE_URL",
+        "default_model": "",
+        "default_base_url": "",
+    }
 
 
 def _set_process_model_env(provider: str, *, model: str | None = None, api_key: str | None = None, base_url: str | None = None) -> dict[str, str]:
@@ -172,18 +184,42 @@ async def _persist_model_env(provider: str, *, model: str | None = None, api_key
     await save_tinycoder_settings(settings)
 
 
+async def _persist_custom_provider(provider: str, *, model: str, api_key: str, base_url: str) -> None:
+    provider = normalize_provider(provider)
+    if not provider or provider in RESERVED_PROVIDER_NAMES:
+        raise RuntimeError("自定义供应商名称不能为空，也不能使用内置供应商名称或别名。")
+    effective = await load_effective_settings()
+    custom = dict(effective.get("customProviders") or {})
+    custom[provider] = {
+        "type": "openai",
+        "model": model,
+        "apiKey": api_key,
+        "baseUrl": base_url.rstrip("/"),
+    }
+    env_updates = _set_process_model_env(provider, model=model, api_key=api_key, base_url=base_url)
+    await save_tinycoder_settings({"customProviders": custom, "env": env_updates, "model": model})
+
+
 async def _default_model_for(provider: str) -> str:
     provider = normalize_provider(provider)
     env = await _effective_env()
     info = _provider_info(provider)
-    return (env.get(info["model_env"]) or info["default_model"]).strip()
+    if provider in SUPPORTED_MODEL_PROVIDERS:
+        return (env.get(info["model_env"]) or info["default_model"]).strip()
+    effective = await load_effective_settings()
+    custom = (effective.get("customProviders") or {}).get(provider) or {}
+    return (env.get(info["model_env"]) or str(custom.get("model") or "")).strip()
 
 
 async def _default_base_url_for(provider: str) -> str:
     provider = normalize_provider(provider)
     env = await _effective_env()
     info = _provider_info(provider)
-    return (env.get(info["base_url_env"]) or info["default_base_url"]).strip().rstrip("/")
+    if provider in SUPPORTED_MODEL_PROVIDERS:
+        return (env.get(info["base_url_env"]) or info["default_base_url"]).strip().rstrip("/")
+    effective = await load_effective_settings()
+    custom = (effective.get("customProviders") or {}).get(provider) or {}
+    return (env.get(info["base_url_env"]) or str(custom.get("baseUrl") or "")).strip().rstrip("/")
 
 
 async def _format_status() -> str:
@@ -231,15 +267,32 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
     if input_text == "/permissions":
         return f"permission store: {TINYCODER_PERMISSIONS_PATH}"
     if input_text == "/providers":
-        return "\n".join(f"{key}  {value['label']}  default={value['default_model']}" for key, value in SUPPORTED_MODEL_PROVIDERS.items())
+        effective = await load_effective_settings()
+        lines = [f"{key}  {value['label']}  default={value['default_model']}" for key, value in SUPPORTED_MODEL_PROVIDERS.items()]
+        custom = effective.get("customProviders") or {}
+        for key, value in custom.items():
+            if isinstance(value, dict):
+                lines.append(f"{key}  Custom OpenAI-compatible  default={value.get('model') or ''}  baseUrl={value.get('baseUrl') or ''}")
+        return "\n".join(lines)
     if input_text == "/provider":
         provider = await _current_provider()
         return f"current provider: {provider} ({_provider_info(provider)['label']})"
+    if input_text.startswith("/provider add "):
+        parts = input_text.split(maxsplit=5)
+        if len(parts) < 6:
+            return "用法: /provider add <name> <model> <api-key> <base-url>"
+        provider_name, model, api_key, base_url = parts[2].strip(), parts[3].strip(), parts[4].strip(), parts[5].strip()
+        if not provider_name or not model or not api_key or not base_url:
+            return "用法: /provider add <name> <model> <api-key> <base-url>"
+        await _persist_custom_provider(provider_name, model=model, api_key=api_key, base_url=base_url)
+        return f"added custom provider={normalize_provider(provider_name)}, model={model}, baseUrl={base_url.rstrip('/')}; saved to {TINYCODER_SETTINGS_PATH}"
     if input_text.startswith("/provider "):
         raw_provider = input_text[len("/provider "):].strip()
         provider = normalize_provider(raw_provider)
         model = await _default_model_for(provider)
         base_url = await _default_base_url_for(provider)
+        if provider not in SUPPORTED_MODEL_PROVIDERS and (not model or not base_url):
+            return f"custom provider {provider} is not configured. Use /provider add <name> <model> <api-key> <base-url> first."
         await _persist_model_env(provider, model=model, base_url=base_url)
         return f"switched provider={provider}, model={model}; saved to {TINYCODER_SETTINGS_PATH}"
     if input_text == "/base-url":
@@ -281,6 +334,12 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
         model = parts[2].strip()
         api_key = parts[3].strip() if len(parts) >= 4 else None
         base_url = parts[4].strip().rstrip("/") if len(parts) >= 5 else await _default_base_url_for(provider)
+        if provider not in SUPPORTED_MODEL_PROVIDERS and not base_url:
+            return "用法: /use <custom-provider> <model> <api-key> <base-url>"
+        if provider not in SUPPORTED_MODEL_PROVIDERS and api_key and base_url:
+            await _persist_custom_provider(provider, model=model, api_key=api_key, base_url=base_url)
+            key_text = f", apiKey={mask_secret(api_key)}"
+            return f"switched custom provider={provider}, model={model}, baseUrl={base_url}{key_text}; saved to {TINYCODER_SETTINGS_PATH}"
         await _persist_model_env(provider, model=model, api_key=api_key, base_url=base_url)
         key_text = f", apiKey={mask_secret(api_key)}" if api_key else ""
         return f"switched provider={provider}, model={model}, baseUrl={base_url}{key_text}; saved to {TINYCODER_SETTINGS_PATH}"

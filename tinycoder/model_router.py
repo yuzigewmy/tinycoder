@@ -30,15 +30,16 @@ class ModelRouter:
             return "anthropic"
         return raw
 
-    def _get_adapter(self, provider: str) -> Any:
+    def _get_adapter(self, provider: str, provider_type: str | None = None) -> Any:
         provider = self._provider_key(provider)
         if provider not in self._adapters:
-            if provider == "qwen":
+            kind = (provider_type or provider).strip().lower()
+            if provider == "qwen" or kind in {"openai", "openai-compatible"}:
                 self._adapters[provider] = QwenModelAdapter(self.tools, self.get_runtime_config)
             elif provider == "anthropic":
                 self._adapters[provider] = AnthropicModelAdapter(self.tools, self.get_runtime_config)
             else:
-                raise RuntimeError(f"Unsupported model provider: {provider}. Use anthropic or qwen.")
+                raise RuntimeError(f"Unsupported model provider: {provider}. Use anthropic, qwen, or a custom OpenAI-compatible provider.")
         return self._adapters[provider]
 
     async def current_runtime(self) -> dict[str, Any]:
@@ -58,7 +59,7 @@ class ModelRouter:
             return await self.next(messages)
         runtime = await self.get_runtime_config()
         provider = self._provider_key(str(runtime.get("provider") or "anthropic"))
-        adapter = self._get_adapter(provider)
+        adapter = self._get_adapter(provider, str(runtime.get("providerType") or ""))
         stream_next = getattr(adapter, "stream_next", None)
         if stream_next is None:
             return await adapter.next(messages)
@@ -69,4 +70,4 @@ class ModelRouter:
             return await self._mock.next(messages)
         runtime = await self.get_runtime_config()
         provider = self._provider_key(str(runtime.get("provider") or "anthropic"))
-        return await self._get_adapter(provider).next(messages)
+        return await self._get_adapter(provider, str(runtime.get("providerType") or "")).next(messages)

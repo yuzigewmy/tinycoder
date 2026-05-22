@@ -43,6 +43,13 @@ def _parse_json_arguments(arguments: Any) -> Any:
         return {"_raw": text}
 
 
+def build_chat_completions_url(base_url: str) -> str:
+    cleaned = str(base_url or "").strip().rstrip("/")
+    if cleaned.endswith("/chat/completions"):
+        return cleaned
+    return f"{cleaned}/chat/completions"
+
+
 def get_retry_limit() -> int:
     import os
 
@@ -212,7 +219,7 @@ class QwenModelAdapter:
     async def next(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         runtime = await self.get_runtime_config()
         base_url = str(runtime.get("baseUrl") or "https://dashscope.aliyuncs.com/compatible-mode/v1").rstrip("/")
-        url = f"{base_url}/chat/completions"
+        url = build_chat_completions_url(base_url)
         model = str(runtime.get("model") or "qwen-plus")
         max_output_tokens = resolve_max_output_tokens(model, runtime.get("maxOutputTokens"))
         headers = {"content-type": "application/json"}
@@ -350,7 +357,7 @@ def _iter_sse_payloads(response: Any):
 async def _qwen_stream_next(self: QwenModelAdapter, messages: list[dict[str, Any]], on_text_delta: Any | None = None) -> dict[str, Any]:
     runtime = await self.get_runtime_config()
     base_url = str(runtime.get("baseUrl") or "https://dashscope.aliyuncs.com/compatible-mode/v1").rstrip("/")
-    url = f"{base_url}/chat/completions"
+    url = build_chat_completions_url(base_url)
     model = str(runtime.get("model") or "qwen-plus")
     max_output_tokens = resolve_max_output_tokens(model, runtime.get("maxOutputTokens"))
     headers = {"content-type": "application/json"}

@@ -22,10 +22,12 @@ class TinyCoderSettings(TypedDict, total=False):
     model: str
     maxOutputTokens: int
     mcpServers: dict[str, McpServerConfig]
+    customProviders: dict[str, dict[str, str | int]]
 
 
 class RuntimeConfig(TypedDict, total=False):
     provider: str
+    providerType: str
     model: str
     baseUrl: str
     authToken: str
@@ -113,6 +115,7 @@ def merge_settings(base: TinyCoderSettings, override: TinyCoderSettings) -> Tiny
         **override,
         "env": {**(base.get("env") or {}), **(override.get("env") or {})},
         "mcpServers": merged_servers,
+        "customProviders": {**(base.get("customProviders") or {}), **(override.get("customProviders") or {})},
     }
     return result
 
@@ -147,7 +150,11 @@ async def load_runtime_config() -> RuntimeConfig:
         or "anthropic"
     ).strip().lower()
 
+    custom_providers = effective.get("customProviders") or {}
+    custom_provider = custom_providers.get(provider) if isinstance(custom_providers, dict) else None
+
     if provider in {"qwen", "dashscope", "aliyun"}:
+        provider_type = "openai"
         model = (
             os.environ.get("TINYCODER_MODEL")
             or effective.get("model")
@@ -163,12 +170,30 @@ async def load_runtime_config() -> RuntimeConfig:
         auth_token = (env.get("DASHSCOPE_AUTH_TOKEN") or env.get("QWEN_AUTH_TOKEN") or "").strip()
         api_key = (env.get("DASHSCOPE_API_KEY") or env.get("QWEN_API_KEY") or "").strip()
     elif provider == "anthropic":
+        provider_type = "anthropic"
         model = (os.environ.get("TINYCODER_MODEL") or effective.get("model") or env.get("ANTHROPIC_MODEL") or "").strip()
         base_url = (env.get("ANTHROPIC_BASE_URL") or "").strip() or "https://api.anthropic.com"
         auth_token = (env.get("ANTHROPIC_AUTH_TOKEN") or "").strip()
         api_key = (env.get("ANTHROPIC_API_KEY") or "").strip()
+    elif isinstance(custom_provider, dict):
+        provider_type = str(custom_provider.get("type") or "openai").strip().lower()
+        if provider_type not in {"openai", "openai-compatible"}:
+            raise RuntimeError(f"Unsupported custom provider type: {provider_type}. Use openai.")
+        provider_type = "openai"
+        upper = provider.upper().replace("-", "_")
+        model = (
+            os.environ.get("TINYCODER_MODEL")
+            or env.get(f"TINYCODER_{upper}_MODEL")
+            or str(custom_provider.get("model") or "")
+        ).strip()
+        base_url = (
+            env.get(f"TINYCODER_{upper}_BASE_URL")
+            or str(custom_provider.get("baseUrl") or "")
+        ).strip().rstrip("/")
+        auth_token = (env.get(f"TINYCODER_{upper}_AUTH_TOKEN") or str(custom_provider.get("authToken") or "")).strip()
+        api_key = (env.get(f"TINYCODER_{upper}_API_KEY") or str(custom_provider.get("apiKey") or "")).strip()
     else:
-        raise RuntimeError(f"Unsupported model provider: {provider}. Use anthropic or qwen.")
+        raise RuntimeError(f"Unsupported model provider: {provider}. Use anthropic, qwen, or add a custom OpenAI-compatible provider with /provider add.")
 
     raw_max = os.environ.get("TINYCODER_MAX_OUTPUT_TOKENS", effective.get("maxOutputTokens") or env.get("TINYCODER_MAX_OUTPUT_TOKENS"))
     max_out: int | None = None
@@ -182,9 +207,10 @@ async def load_runtime_config() -> RuntimeConfig:
     if not model:
         raise RuntimeError("No model configured. Set ~/.tinycoder/settings.json or a provider-specific model env variable.")
     if not auth_token and not api_key:
-        raise RuntimeError("No auth configured. Set ANTHROPIC_API_KEY or DASHSCOPE_API_KEY in ~/.tinycoder/settings.json or process env.")
+        raise RuntimeError("No auth configured. Set an API key/auth token in ~/.tinycoder/settings.json or process env.")
     result: RuntimeConfig = {
         "provider": provider,
+        "providerType": provider_type,
         "model": model,
         "baseUrl": base_url,
         "mcpServers": effective.get("mcpServers") or {},

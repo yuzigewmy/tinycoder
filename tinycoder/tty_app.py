@@ -17,7 +17,6 @@ from .permissions import PermissionManager
 from .prompt import build_system_prompt
 from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, load_transcript, rename_session, save_session
 from .tui.markdown import MarkdownStreamPrinter, is_markdown_path, render_markdownish
-from .tui.transcript import render_transcript_lines
 from .ui import render_banner, render_permission_prompt
 from .utils.token_estimator import compute_context_stats
 
@@ -374,8 +373,26 @@ async def _view_session(cwd: str, session_id: str) -> None:
         print("当前会话暂无可查看内容。")
         return
     print(f"\n[session {session_id}]\n")
-    print("\n".join(render_transcript_lines(entries)))
+    print(_render_view_entries(entries))
     print("")
+
+
+def _render_view_entries(entries: list[dict[str, Any]]) -> str:
+    blocks: list[str] = []
+    for entry in entries:
+        kind = str(entry.get("kind") or "")
+        body = str(entry.get("body") or "")
+        if kind == "user":
+            blocks.append(f"{PROMPT_RED}you{PROMPT_RESET}\n{body}")
+        elif kind == "assistant":
+            blocks.append(f"\033[32massistant{PROMPT_RESET}\n{render_markdownish(body)}")
+        elif kind == "progress":
+            blocks.append(f"\033[33mprogress{PROMPT_RESET}\n{render_markdownish(body)}")
+        elif kind == "tool":
+            name = str(entry.get("toolName") or "unknown")
+            status = str(entry.get("status") or "success")
+            blocks.append(f"\033[35mtool{PROMPT_RESET} {name} {status}\n{render_markdownish(body)}")
+    return "\n\n---\n\n".join(blocks)
 
 
 async def _refresh_runtime(args: dict[str, Any]) -> dict[str, Any]:

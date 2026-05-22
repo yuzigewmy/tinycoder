@@ -11,12 +11,13 @@ from .cli_commands import complete_slash_command_name, find_matching_slash_comma
 from .compact.context_collapse import apply_context_collapse_if_needed, create_context_collapse_state
 from .compact.manual_compact import manual_compact
 from .compact.snip_compact import snip_compact_conversation
-from .history import load_history_entries, save_history_entries
+from .history import clear_history_entries, load_history_entries, save_history_entries
 from .local_tool_shortcuts import parse_local_tool_shortcut
 from .permissions import PermissionManager
 from .prompt import build_system_prompt
-from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, rename_session, save_session
+from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, load_transcript, rename_session, save_session
 from .tui.markdown import MarkdownStreamPrinter, is_markdown_path, render_markdownish
+from .tui.transcript import render_transcript_lines
 from .ui import render_banner, render_permission_prompt
 from .utils.token_estimator import compute_context_stats
 
@@ -65,12 +66,40 @@ def _render_shortcut_output(shortcut: dict[str, Any], output: Any) -> str:
     return text
 
 
+MAX_STATUS_PREVIEW = 120
+
+
+def _single_line_preview(value: Any, limit: int = MAX_STATUS_PREVIEW) -> str:
+    text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+    text = " ".join(text.split())
+    return text[:limit - 3] + "..." if len(text) > limit else text
+
+
+def _render_progress_node(content: Any) -> str:
+    preview = _single_line_preview(content)
+    return f"[thinking] {preview}" if preview else "[thinking] working..."
+
+
+def _render_tool_start(name: Any, input_value: Any) -> None:
+    preview = _single_line_preview(input_value)
+    suffix = f" {preview}" if preview else ""
+    print(f"[tool] {name}{suffix}")
+
+
+def _render_tool_result(name: Any, output: Any, is_error: bool) -> None:
+    status = "err" if is_error else "ok"
+    preview = _single_line_preview(output)
+    suffix = f" - {preview}" if preview else ""
+    print(f"[tool:{name} {status}]{suffix}")
+
+
 SENSITIVE_MODEL_COMMANDS = ("/apikey ", "/use ")
 MODEL_CONFIG_COMMANDS = ("/provider ", "/model ", "/apikey ", "/base-url ", "/use ")
 PROMPT_RED = "\033[31m"
 PROMPT_RESET = "\033[0m"
 PROMPT_TEXT = "tinycoder> "
 COLORED_PROMPT = f"{PROMPT_RED}{PROMPT_TEXT}{PROMPT_RESET}"
+INTERRUPTED_MESSAGE = "已中断当前模型输出。"
 
 
 def _is_sensitive_model_command(input_text: str) -> bool:
@@ -81,10 +110,10 @@ def _is_model_config_command(input_text: str) -> bool:
     return input_text in {"/provider", "/model", "/apikey", "/base-url", "/status"} or any(input_text.startswith(prefix) for prefix in MODEL_CONFIG_COMMANDS)
 
 
-def _read_interactive_line(prompt: str) -> str:
+def _read_interactive_line(prompt: str, history_entries: list[str] | None = None) -> str:
     if os.name == "nt":
-        return _read_interactive_line_windows(prompt)
-    return _read_interactive_line_posix(prompt)
+        return _read_interactive_line_windows(prompt, history_entries or [])
+    return _read_interactive_line_posix(prompt, history_entries or [])
 
 
 def _redraw_prompt(prompt: str, buffer: str) -> None:
@@ -99,10 +128,59 @@ def _apply_tab_completion(prompt: str, buffer: str) -> str:
     return buffer
 
 
-def _read_interactive_line_windows(prompt: str) -> str:
+def _history_candidates(history_entries: list[str]) -> list[str]:
+    seen: set[str] = set()
+    candidates: list[str] = []
+    for entry in reversed(history_entries):
+        value = entry.strip()
+        if not value.startswith("/") or value in seen:
+            continue
+        candidates.append(value)
+        seen.add(value)
+    return candidates
+
+
+def _apply_history_navigation(prompt: str, buffer: str, direction: int, state: dict[str, Any]) -> str:
+    if not buffer.startswith("/"):
+        return buffer
+    candidates = state.get("candidates") or []
+    if not candidates:
+        return buffer
+    if state.get("index") is None:
+        if direction > 0:
+            return buffer
+        state["draft"] = buffer
+        state["index"] = 0
+    else:
+        next_index = int(state["index"]) + (1 if direction < 0 else -1)
+        if next_index < 0:
+            state["index"] = None
+            next_buffer = str(state.get("draft") or "")
+            _redraw_prompt(prompt, next_buffer)
+            return next_buffer
+        state["index"] = min(len(candidates) - 1, next_index)
+    next_buffer = candidates[int(state["index"])]
+    _redraw_prompt(prompt, next_buffer)
+    return next_buffer
+
+
+def _reset_history_navigation(state: dict[str, Any]) -> None:
+    state["index"] = None
+
+
+def _format_history_entries(history_entries: list[str], limit: int = 50) -> str:
+    candidates = list(reversed(_history_candidates(history_entries)))[:limit]
+    if not candidates:
+        return "No command history."
+    width = len(str(len(candidates)))
+    return "\n".join(f"{str(index).rjust(width)}. {entry}" for index, entry in enumerate(candidates, 1))
+
+
+def _read_interactive_line_windows(prompt: str, history_entries: list[str]) -> str:
     import msvcrt
 
     buffer = ""
+    history_state: dict[str, Any] = {"candidates": _history_candidates(history_entries), "index": None, "draft": ""}
     print(prompt, end="", flush=True)
     while True:
         char = msvcrt.getwch()
@@ -113,29 +191,48 @@ def _read_interactive_line_windows(prompt: str) -> str:
             raise KeyboardInterrupt
         if char == "\t":
             buffer = _apply_tab_completion(prompt, buffer)
+            _reset_history_navigation(history_state)
             continue
         if char in {"\b", "\x7f"}:
             if buffer:
                 buffer = buffer[:-1]
+                _reset_history_navigation(history_state)
                 _redraw_prompt(prompt, buffer)
             continue
         if char in {"\x00", "\xe0"}:
-            msvcrt.getwch()
+            key = msvcrt.getwch()
+            if key == "H":
+                buffer = _apply_history_navigation(prompt, buffer, -1, history_state)
+            elif key == "P":
+                buffer = _apply_history_navigation(prompt, buffer, 1, history_state)
             continue
         if char >= " ":
             buffer += char
+            _reset_history_navigation(history_state)
             print(char, end="", flush=True)
 
 
-def _read_interactive_line_posix(prompt: str) -> str:
+def _read_interactive_line_posix(prompt: str, history_entries: list[str]) -> str:
+    import select
     import termios
     import tty
 
     buffer = ""
+    history_state: dict[str, Any] = {"candidates": _history_candidates(history_entries), "index": None, "draft": ""}
     stdin = sys.stdin
     fd = stdin.fileno()
     old_settings = termios.tcgetattr(fd)
     print(prompt, end="", flush=True)
+
+    def read_escape_tail() -> str:
+        ready, _, _ = select.select([stdin], [], [], 0.05)
+        if not ready:
+            return ""
+        first = stdin.read(1)
+        ready, _, _ = select.select([stdin], [], [], 0.02)
+        second = stdin.read(1) if ready else ""
+        return first + second
+
     try:
         tty.setraw(fd)
         while True:
@@ -147,19 +244,138 @@ def _read_interactive_line_posix(prompt: str) -> str:
                 raise KeyboardInterrupt
             if char == "\t":
                 buffer = _apply_tab_completion(prompt, buffer)
+                _reset_history_navigation(history_state)
                 continue
             if char in {"\x7f", "\b"}:
                 if buffer:
                     buffer = buffer[:-1]
+                    _reset_history_navigation(history_state)
                     _redraw_prompt(prompt, buffer)
                 continue
             if char == "\u001b":
+                next_chars = read_escape_tail()
+                if next_chars == "[A":
+                    buffer = _apply_history_navigation(prompt, buffer, -1, history_state)
+                elif next_chars == "[B":
+                    buffer = _apply_history_navigation(prompt, buffer, 1, history_state)
                 continue
             if char >= " ":
                 buffer += char
+                _reset_history_navigation(history_state)
                 print(char, end="", flush=True)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def _format_session_option(meta: dict[str, Any], selected: bool) -> str:
+    marker = ">" if selected else " "
+    title = str(meta.get("title") or "(untitled)")
+    return f"{marker} {meta.get('id')}  {title}  messages={meta.get('messageCount')}"
+
+
+def _render_session_picker(sessions: list[dict[str, Any]], index: int) -> None:
+    print("\033[2J\033[H", end="")
+    print("Select a session with Up/Down, Enter to resume, Esc/Ctrl+C to cancel.\n")
+    for i, meta in enumerate(sessions):
+        print(_format_session_option(meta, i == index))
+
+
+def _pick_session_windows(sessions: list[dict[str, Any]]) -> str | None:
+    import msvcrt
+
+    index = 0
+    _render_session_picker(sessions, index)
+    while True:
+        char = msvcrt.getwch()
+        if char in {"\r", "\n"}:
+            print("")
+            return str(sessions[index].get("id"))
+        if char in {"\u001b", "\u0003"}:
+            print("\nCanceled.")
+            return None
+        if char in {"\x00", "\xe0"}:
+            key = msvcrt.getwch()
+            if key == "H":
+                index = max(0, index - 1)
+            elif key == "P":
+                index = min(len(sessions) - 1, index + 1)
+            _render_session_picker(sessions, index)
+
+
+def _pick_session_posix(sessions: list[dict[str, Any]]) -> str | None:
+    import select
+    import termios
+    import tty
+
+    index = 0
+    stdin = sys.stdin
+    fd = stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    _render_session_picker(sessions, index)
+
+    def read_escape_tail() -> str:
+        ready, _, _ = select.select([stdin], [], [], 0.05)
+        if not ready:
+            return ""
+        first = stdin.read(1)
+        ready, _, _ = select.select([stdin], [], [], 0.02)
+        second = stdin.read(1) if ready else ""
+        return first + second
+
+    try:
+        tty.setraw(fd)
+        while True:
+            char = stdin.read(1)
+            if char in {"\r", "\n"}:
+                print("")
+                return str(sessions[index].get("id"))
+            if char in {"\u001b", "\u0003"}:
+                if char == "\u001b":
+                    next_chars = read_escape_tail()
+                    if next_chars == "[A":
+                        index = max(0, index - 1)
+                        _render_session_picker(sessions, index)
+                        continue
+                    if next_chars == "[B":
+                        index = min(len(sessions) - 1, index + 1)
+                        _render_session_picker(sessions, index)
+                        continue
+                print("\nCanceled.")
+                return None
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+async def _pick_resume_session(cwd: str) -> str | None:
+    sessions = await list_sessions(cwd)
+    if not sessions:
+        print("No saved sessions.")
+        return None
+    visible = sessions[:20]
+    return _pick_session_windows(visible) if os.name == "nt" else _pick_session_posix(visible)
+
+
+async def _resume_session(cwd: str, messages: list[dict[str, Any]], target: str, args: dict[str, Any]) -> str | None:
+    loaded = await load_session(cwd, target)
+    if not loaded:
+        print("Session not found.")
+        return None
+    messages[:] = [messages[0], *loaded]
+    restored_collapse = await load_context_collapse_state(cwd, target)
+    if restored_collapse and args.get("contextCollapseState") is not None:
+        args["contextCollapseState"].update(restored_collapse)
+    print(f"Resumed session {target}.")
+    return target
+
+
+async def _view_session(cwd: str, session_id: str) -> None:
+    entries = await load_transcript(cwd, session_id)
+    if not entries:
+        print("当前会话暂无可查看内容。")
+        return
+    print(f"\n[session {session_id}]\n")
+    print("\n".join(render_transcript_lines(entries)))
+    print("")
 
 
 async def _refresh_runtime(args: dict[str, Any]) -> dict[str, Any]:
@@ -188,40 +404,22 @@ async def run_tty_app(args: dict[str, Any]) -> None:
     history = load_history_entries()
     resume_target = args.get("resumeTarget")
     if resume_target and resume_target != "picker":
-        loaded = await load_session(cwd, str(resume_target))
-        if loaded:
-            messages[:] = [messages[0], *loaded]
-            session_id = str(resume_target)
-            restored_collapse = await load_context_collapse_state(cwd, session_id)
-            if restored_collapse and args.get("contextCollapseState") is not None:
-                args["contextCollapseState"].update(restored_collapse)
-            print(f"已恢复会话 {session_id}。")
-        else:
-            print(f"未找到会话 {resume_target}。")
+        resumed = await _resume_session(cwd, messages, str(resume_target), args)
+        if resumed:
+            session_id = resumed
     elif resume_target == "picker":
-        sessions = await list_sessions(cwd)
-        if sessions:
-            for i, meta in enumerate(sessions, 1):
-                print(f"{i}. {meta.get('id')}  {meta.get('title') or '(untitled)'}")
-            chosen = input("输入要恢复的序号或会话 ID: ").strip()
-            target = None
-            if chosen.isdigit() and 1 <= int(chosen) <= len(sessions):
-                target = sessions[int(chosen) - 1]["id"]
-            elif chosen:
-                target = chosen
-            if target:
-                loaded = await load_session(cwd, target)
-                if loaded:
-                    messages[:] = [messages[0], *loaded]
-                    session_id = target
-                    print(f"已恢复会话 {session_id}。")
+        target = await _pick_resume_session(cwd)
+        if target:
+            resumed = await _resume_session(cwd, messages, target, args)
+            if resumed:
+                session_id = resumed
 
     print(render_banner(args.get("runtime") or {}, cwd))
     print("输入 /help 查看中文命令说明，输入 /exit 退出。")
 
     while True:
         try:
-            raw = _read_interactive_line(COLORED_PROMPT)
+            raw = _read_interactive_line(COLORED_PROMPT, history)
         except (EOFError, KeyboardInterrupt):
             print("")
             break
@@ -244,23 +442,29 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     ok = await rename_session(cwd, session_id, title)
                     print("已重命名。" if ok else "未找到会话。")
                 continue
+            if input_text == "/history":
+                print(_format_history_entries(history))
+                continue
+            if input_text == "/clear":
+                history.clear()
+                clear_history_entries()
+                print("已清空所有历史输入指令。")
+                continue
             if input_text == "/resume":
-                sessions = await list_sessions(cwd)
-                if not sessions:
-                    print("暂无已保存会话。")
-                else:
-                    for meta in sessions[:20]:
-                        print(f"{meta.get('id')}  {meta.get('title') or '(untitled)'}")
+                target = await _pick_resume_session(cwd)
+                if target:
+                    resumed = await _resume_session(cwd, messages, target, args)
+                    if resumed:
+                        session_id = resumed
                 continue
             if input_text.startswith("/resume "):
                 target = input_text[len("/resume "):].strip()
-                loaded = await load_session(cwd, target)
-                if not loaded:
-                    print("未找到会话。")
-                else:
-                    messages[:] = [messages[0], *loaded]
-                    session_id = target
-                    print(f"已恢复会话 {session_id}。")
+                resumed = await _resume_session(cwd, messages, target, args)
+                if resumed:
+                    session_id = resumed
+                continue
+            if input_text == "/view":
+                await _view_session(cwd, session_id)
                 continue
             if input_text == "/fork":
                 forked = await fork_session(cwd, session_id)
@@ -327,6 +531,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
             messages.append({"role": "user", "content": input_text})
             permissions.begin_turn()
             stream_printer = MarkdownStreamPrinter()
+            interrupted = False
             try:
                 messages[:] = await run_agent_turn({
                     "model": args["model"],
@@ -337,14 +542,19 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     "modelName": (runtime or {}).get("model") or "",
                     "contentReplacementState": args.get("contentReplacementState"),
                     "contextCollapseState": args.get("contextCollapseState"),
-                    "onToolStart": lambda name, inp: print(f"[tool] {name} {inp}"),
-                    "onToolResult": lambda name, out, is_error: print(f"[tool:{name} {'err' if is_error else 'ok'}]\n{out}"),
+                    "onToolStart": _render_tool_start,
+                    "onToolResult": _render_tool_result,
                     "onAssistantDelta": stream_printer.write,
                     "onAssistantMessage": lambda content: print(f"\n{_render_assistant_output(content)}\n"),
-                    "onProgressMessage": lambda content: print(f"\n[progress]\n{_render_assistant_output(content)}\n"),
+                    "onProgressMessage": lambda content: print(_render_progress_node(content)),
                 })
+            except KeyboardInterrupt:
+                interrupted = True
+                messages.append({"role": "assistant", "content": INTERRUPTED_MESSAGE})
             finally:
                 stream_printer.finish()
+                if interrupted:
+                    print(f"\n{INTERRUPTED_MESSAGE}\n")
                 permissions.end_turn()
                 await save_session(cwd, session_id, messages, already_saved_count)
         except Exception as error:

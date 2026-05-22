@@ -30,6 +30,7 @@ async def build_system_prompt(cwd: str, permission_summary: list[str] | None = N
         "If the user names a skill or clearly asks for a workflow that matches a listed skill, call load_skill before following it.",
         "Structured response protocol:",
         "- When you are still working and will continue with more tool calls, start your text with <progress>.",
+        "- Keep <progress> updates short: one sentence with the current important milestone only. Do not reveal detailed private reasoning or step-by-step internal chain of thought.",
         "- Only when the task is actually complete and you are ready to hand control back, start your text with <final>.",
         "- Use ask_user when clarification is required; that tool ends the turn and waits for user input.",
         "- Do not stop after a progress update. After a <progress> message, continue the task in the next step.",

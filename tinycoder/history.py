@@ -51,10 +51,22 @@ def save_history_entries(entries: list[str], cwd: str, session_id: str) -> None:
         pass
 
 
+def clear_history_entries() -> None:
+    try:
+        Path(TINYCODER_HISTORY_PATH).unlink()
+    except FileNotFoundError:
+        pass
+
+
 async def save_history_entries_async(entries: list[str], cwd: str, session_id: str) -> None:
     save_history_entries(entries, cwd, session_id)
+
+
+async def clear_history_entries_async() -> None:
+    clear_history_entries()
 
 
 # TypeScript-compatible aliases.
 loadHistoryEntries = load_history_entries_async
 saveHistoryEntries = save_history_entries_async
+clearHistoryEntries = clear_history_entries_async

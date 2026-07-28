@@ -177,6 +177,13 @@ def render_banner(runtime: dict[str, Any] | None = None, cwd: str | None = None)
     cwd = cwd or os.getcwd()
     provider = str(runtime.get("provider") or "mock")
     model = str(runtime.get("model") or "mock")
+    permission_mode = str(runtime.get("permissionMode") or "request_approval")
+    permission_label = str(runtime.get("permissionModeLabel") or "请求批准")
+    permission_warning = (
+        "权限警告: 完全访问已启用，TinyCoder 不会执行应用层审批。"
+        if permission_mode == "full_access"
+        else ""
+    )
     art = "\n".join([
  r' _____  _                 ____            _             ',
  r'|_   _|(_) _ __   _   _  / ___| ___    __| |  ___  _ __ ',
@@ -195,6 +202,8 @@ def render_banner(runtime: dict[str, Any] | None = None, cwd: str | None = None)
         "",
         f"当前供应商: {provider}",
         f"当前模型: {model}",
+        f"当前权限: {permission_label} ({permission_mode})",
+        *([permission_warning] if permission_warning else []),
         f"当前目录: {cwd}",
         "作者: Kerinol.C",
     ])

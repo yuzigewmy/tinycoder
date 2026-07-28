@@ -4,6 +4,7 @@ import os
 import re
 import shlex
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from ..background_tasks import register_background_shell_task
@@ -58,6 +59,20 @@ def strip_trailing_background_operator(command: str) -> str:
     return re.sub(r"&\s*$", "", command.strip()).strip()
 
 
+def explicit_path_arguments(args: list[str], cwd: str) -> list[str]:
+    paths: list[str] = []
+    for raw_arg in args:
+        candidate = raw_arg.split("=", 1)[1] if raw_arg.startswith("--") and "=" in raw_arg else raw_arg
+        candidate = candidate.strip().strip("\"'")
+        if not candidate or candidate.startswith("-"):
+            continue
+        expanded = Path(os.path.expanduser(candidate))
+        if expanded.is_absolute() or candidate.startswith(("..", "~")):
+            resolved = expanded if expanded.is_absolute() else Path(cwd) / expanded
+            paths.append(str(resolved.resolve()))
+    return paths
+
+
 def _validate(input_value: Any) -> dict[str, Any]:
     if not isinstance(input_value, dict) or not isinstance(input_value.get("command"), str):
         raise ValueError("command must be a string")
@@ -86,10 +101,13 @@ async def _run(input_value: dict[str, Any], context: dict[str, Any]) -> dict[str
     permissions = context.get("permissions")
     force_reason = None if use_shell or known_command else f"Unknown command '{normalized['command']}' is not in the built-in read-only/development set"
     if permissions is not None:
-        if force_reason:
-            await permissions.ensure_command(command, args, effective_cwd, {"forcePromptReason": force_reason})
-        elif use_shell or not is_read_only_command(normalized["command"]):
-            await permissions.ensure_command(command, args, effective_cwd)
+        path_intent = "read" if is_read_only_command(normalized["command"]) else "write"
+        for explicit_path in explicit_path_arguments(args, effective_cwd):
+            await permissions.ensure_path_access(explicit_path, path_intent)
+        options = {"forcePromptReason": force_reason} if force_reason else None
+        # Read-only command names are not sufficient to establish safety:
+        # arguments may still target credentials or paths outside the workspace.
+        await permissions.ensure_command(command, args, effective_cwd, options)
 
     if use_shell and background_shell:
         child = subprocess.Popen([command, *args], cwd=effective_cwd, env=os.environ.copy(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
@@ -125,3 +143,4 @@ normalizeCommandInput = normalize_command_input
 looksLikeShellSnippet = looks_like_shell_snippet
 isBackgroundShellSnippet = is_background_shell_snippet
 stripTrailingBackgroundOperator = strip_trailing_background_operator
+explicitPathArguments = explicit_path_arguments

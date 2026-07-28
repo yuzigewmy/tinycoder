@@ -20,7 +20,7 @@ from .memory.runtime import (
     capture_memory_turn,
     create_memory_context_provider,
 )
-from .permissions import PermissionManager
+from .permissions import PermissionManager, permission_mode_label
 from .prompt import build_instruction_context, build_system_prompt
 from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, load_transcript, rename_session, save_session
 from .terminal_input import (
@@ -653,6 +653,13 @@ async def _show_session_workspace(
     repaint: bool,
 ) -> None:
     runtime = await _refresh_runtime(args)
+    permissions: PermissionManager = args["permissions"]
+    permission_mode = str(getattr(permissions, "mode", "request_approval"))
+    runtime = {
+        **runtime,
+        "permissionMode": permission_mode,
+        "permissionModeLabel": permission_mode_label(permission_mode),
+    }
     entries = await load_transcript(cwd, session_id) if session_id else None
     if repaint:
         clear_screen()
@@ -817,7 +824,11 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                 continue
             local_result = await try_handle_local_command(
                 input_text,
-                {"tools": args["tools"], "memory": args.get("memory")},
+                {
+                    "tools": args["tools"],
+                    "memory": args.get("memory"),
+                    "permissions": permissions,
+                },
             )
             if local_result is not None:
                 if _is_model_config_command(input_text):

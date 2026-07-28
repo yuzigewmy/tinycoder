@@ -21,6 +21,17 @@ def _validate(input_value: Any) -> dict[str, Any]:
 
 async def _run(input_value: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     try:
+        permissions = context.get("permissions")
+        if permissions is not None:
+            host = urlparse(input_value["url"]).netloc.lower()
+            await permissions.ensure_external_action(
+                "web_fetch",
+                input_value,
+                risk="medium",
+                reason="the URL and request metadata will be sent to an external host",
+                scope=f"web:fetch:{host}",
+                details=[f"host: {host}"],
+            )
         result = await fetch_web_page({"url": input_value["url"], "maxChars": input_value.get("max_chars") or 12000})
         if int(result.get("status") or 0) >= 400:
             return {"ok": False, "output": f"HTTP {result.get('status')} {result.get('statusText', '')}: {input_value['url']}"}

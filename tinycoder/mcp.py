@@ -392,7 +392,28 @@ def _validate_prompt(input_value: Any) -> dict[str, Any]:
 
 
 def create_mcp_helper_tools(clients: dict[str, Any]) -> list[ToolDefinition]:
+    async def ensure_helper_access(
+        context: dict[str, Any],
+        action: str,
+        payload: Any,
+    ) -> None:
+        permissions = context.get("permissions")
+        if permissions is not None:
+            await permissions.ensure_external_action(
+                f"mcp_helper:{action}",
+                payload,
+                risk="medium",
+                reason="MCP resource and prompt helpers cross an external server boundary",
+                scope=f"mcp:helpers:{action}",
+                details=[f"connected servers: {', '.join(sorted(clients))}"],
+            )
+
     async def list_resources(_: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        await ensure_helper_access(
+            context,
+            "list-resources",
+            {"servers": sorted(clients)},
+        )
         lines: list[str] = []
         for server_name, client in clients.items():
             resources = await client.list_resources()
@@ -406,6 +427,7 @@ def create_mcp_helper_tools(clients: dict[str, Any]) -> list[ToolDefinition]:
         return {"ok": True, "output": "\n".join(lines) if lines else "No MCP resources available."}
 
     async def read_resource(input_value: dict[str, str], context: dict[str, Any]) -> dict[str, Any]:
+        await ensure_helper_access(context, "read-resource", input_value)
         uri = input_value["uri"]
         for client in clients.values():
             try:
@@ -415,6 +437,11 @@ def create_mcp_helper_tools(clients: dict[str, Any]) -> list[ToolDefinition]:
         return {"ok": False, "output": f"Resource not found or unreadable: {uri}"}
 
     async def list_prompts(_: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        await ensure_helper_access(
+            context,
+            "list-prompts",
+            {"servers": sorted(clients)},
+        )
         lines: list[str] = []
         for server_name, client in clients.items():
             prompts = await client.list_prompts()
@@ -426,6 +453,7 @@ def create_mcp_helper_tools(clients: dict[str, Any]) -> list[ToolDefinition]:
         return {"ok": True, "output": "\n".join(lines) if lines else "No MCP prompts available."}
 
     async def get_prompt(input_value: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        await ensure_helper_access(context, "get-prompt", input_value)
         name = input_value["name"]
         for client in clients.values():
             try:
@@ -446,7 +474,34 @@ def create_mcp_tool(client: Any, server_name: str, descriptor: dict[str, Any]) -
     raw_name = str(descriptor.get("name") or "tool")
     safe_name = f"mcp__{sanitize_tool_segment(server_name)}__{sanitize_tool_segment(raw_name)}"
     description = descriptor.get("description") or f"Call MCP tool {raw_name} on server {server_name}."
+    annotations = descriptor.get("annotations") if isinstance(descriptor.get("annotations"), dict) else {}
+    if annotations.get("destructiveHint") is True:
+        risk = "critical"
+        reason = "MCP server marks this tool as destructive"
+    elif annotations.get("readOnlyHint") is True:
+        risk = "medium"
+        reason = "MCP server marks this tool as read-only, but it still crosses an external trust boundary"
+    else:
+        risk = "high"
+        reason = "MCP tool is not verifiably read-only and may change external state"
+
     async def _run(input_value: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        permissions = context.get("permissions")
+        if permissions is not None:
+            await permissions.ensure_external_action(
+                safe_name,
+                input_value,
+                risk=risk,
+                reason=reason,
+                scope=f"mcp:{server_name}:{raw_name}",
+                details=[
+                    f"server: {server_name}",
+                    f"tool: {raw_name}",
+                    f"readOnlyHint: {annotations.get('readOnlyHint')}",
+                    f"destructiveHint: {annotations.get('destructiveHint')}",
+                    f"openWorldHint: {annotations.get('openWorldHint')}",
+                ],
+            )
         return await client.call_tool(raw_name, input_value)
     return ToolDefinition(safe_name, str(description), normalize_input_schema(descriptor.get("inputSchema")), _run, _validate_object)
 

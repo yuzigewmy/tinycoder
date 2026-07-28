@@ -25,6 +25,16 @@ def _validate(input_value: Any) -> dict[str, Any]:
 
 async def _run(input_value: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     try:
+        permissions = context.get("permissions")
+        if permissions is not None:
+            await permissions.ensure_external_action(
+                "web_search",
+                input_value,
+                risk="medium",
+                reason="query and request metadata will be sent to a public search service",
+                scope="web:search",
+                details=[f"query length: {len(input_value['query'])}"],
+            )
         result = await search_duckduckgo_lite({
             "query": input_value["query"],
             "maxResults": input_value.get("max_results") or 5,

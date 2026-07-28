@@ -13,6 +13,11 @@ from .config import (
     save_tinycoder_settings,
 )
 from .memory.commands import handle_memory_command
+from .permissions import (
+    format_permission_mode_status,
+    parse_permission_mode,
+    permission_mode_label,
+)
 
 SUPPORTED_MODEL_PROVIDERS: dict[str, dict[str, str]] = {
     "anthropic": {
@@ -81,7 +86,10 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"name": "/newchat", "usage": "/newchat", "description": "保留当前会话并打开一个新的空白会话页面。"},
     {"name": "/new", "usage": "/new", "description": "清空当前会话并重新开始。"},
     {"name": "/fork", "usage": "/fork", "description": "将当前会话分叉为新的独立会话。"},
-    {"name": "/permissions", "usage": "/permissions", "description": "查看权限配置存储路径。"},
+    {"name": "/permissions", "usage": "/permissions", "description": "查看当前三级权限模式和安全边界。"},
+    {"name": "/permissions", "usage": "/permissions request-approval", "description": "切换为请求批准。"},
+    {"name": "/permissions", "usage": "/permissions auto-approve", "description": "切换为替我审批。"},
+    {"name": "/permissions", "usage": "/permissions full-access [confirm]", "description": "切换为完全访问；必须显式二次确认。"},
     {"name": "/exit", "usage": "/exit", "description": "退出 TinyCoder。"},
     {"name": "/ls", "usage": "/ls [path]", "description": "列出目录文件。"},
     {"name": "/grep", "usage": "/grep <pattern>::[path]", "description": "在文件中搜索文本。"},
@@ -234,10 +242,16 @@ async def _default_base_url_for(provider: str) -> str:
     return (env.get(info["base_url_env"]) or str(custom.get("baseUrl") or "")).strip().rstrip("/")
 
 
-async def _format_status() -> str:
+async def _format_status(permission_manager: Any = None) -> str:
     provider = await _current_provider()
     info = _provider_info(provider)
     env = await _effective_env()
+    permission_line = (
+        f"permission: {permission_mode_label(permission_manager.mode)} "
+        f"({permission_manager.mode})"
+        if permission_manager is not None
+        else None
+    )
     try:
         runtime = await load_runtime_config()
         provider = normalize_provider(str(runtime.get("provider") or provider))
@@ -249,25 +263,31 @@ async def _format_status() -> str:
         auth_line = f"{info['auth_token_env']}: {mask_secret(auth_token)}" if auth_token else f"{info['api_key_env']}: {mask_secret(api_key)}"
         source = str(runtime.get("sourceSummary") or "")
         mcp_count = len(runtime.get("mcpServers") or {})
-        return "\n".join([
+        lines = [
             f"provider: {provider} ({info['label']})",
             f"model: {model}",
             f"baseUrl: {base_url}",
             f"auth: {auth_line}",
             f"mcp servers: {mcp_count}",
-            source,
-        ])
+        ]
+        if permission_line:
+            lines.append(permission_line)
+        lines.append(source)
+        return "\n".join(lines)
     except Exception as error:
         model = env.get("TINYCODER_MODEL") or env.get(info["model_env"]) or "未配置"
         base_url = env.get(info["base_url_env"]) or info["default_base_url"]
         api_key = env.get(info["api_key_env"]) or ""
-        return "\n".join([
+        lines = [
             f"provider: {provider} ({info['label']})",
             f"model: {model}",
             f"baseUrl: {base_url}",
             f"auth: {info['api_key_env']}: {mask_secret(api_key)}",
             f"status unavailable: {error}",
-        ])
+        ]
+        if permission_line:
+            lines.append(permission_line)
+        return "\n".join(lines)
 
 
 async def try_handle_local_command(input_text: str, context: dict[str, Any] | None = None) -> str | None:
@@ -293,7 +313,51 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
     if input_text == "/config-paths":
         return "\n".join([f"tinycoder settings: {TINYCODER_SETTINGS_PATH}", f"tinycoder permissions: {TINYCODER_PERMISSIONS_PATH}", f"tinycoder mcp: {TINYCODER_MCP_PATH}", f"compat fallback: {CLAUDE_SETTINGS_PATH}"])
     if input_text == "/permissions":
-        return f"permission store: {TINYCODER_PERMISSIONS_PATH}"
+        manager = context.get("permissions")
+        if manager is None:
+            return (
+                f"permission store: {TINYCODER_PERMISSIONS_PATH}\n"
+                "permission manager unavailable in this command context"
+            )
+        return format_permission_mode_status(manager)
+    if input_text.startswith("/permissions "):
+        manager = context.get("permissions")
+        if manager is None:
+            return "permission manager unavailable in this command context"
+        arguments = input_text[len("/permissions ") :].strip().split()
+        if not arguments or len(arguments) > 2:
+            return (
+                "usage: /permissions "
+                "<request-approval|auto-approve|full-access> [confirm]"
+            )
+        try:
+            mode = parse_permission_mode(arguments[0])
+        except ValueError as error:
+            return str(error)
+        confirmed = len(arguments) == 2 and arguments[1].lower() == "confirm"
+        if len(arguments) == 2 and not confirmed:
+            return (
+                "usage: /permissions "
+                "<request-approval|auto-approve|full-access> [confirm]"
+            )
+        if mode == "full_access" and not confirmed:
+            return "\n".join(
+                [
+                    "完全访问会绕过 TinyCoder 的全部应用层权限检查。",
+                    "TinyCoder 不提供操作系统级沙箱；此模式可能读取或修改工作区外文件、运行危险命令并访问网络。",
+                    "如确认承担风险，请输入: /permissions full-access confirm",
+                ]
+            )
+        if mode != "full_access" and confirmed:
+            return "confirm is only valid with full-access"
+        await manager.set_mode(
+            mode,
+            confirm_full_access=mode == "full_access" and confirmed,
+        )
+        return (
+            f"权限模式已切换为 {permission_mode_label(mode)} ({mode})；"
+            f"已保存到 {manager.store_path}"
+        )
     if input_text == "/providers":
         effective = await load_effective_settings()
         lines = [f"{key}  {value['label']}  default={value['default_model']}" for key, value in SUPPORTED_MODEL_PROVIDERS.items()]
@@ -398,7 +462,7 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
         shortcuts = ["/ls [path]", "/grep <pattern>::[path]", "/read <path>", "/md <path>", "/write <path>::<content>", "/modify <path>::<content>", "/edit <path>::<search>::<replace>", "/patch <path>::<search>::<replace>...", "/cmd [cwd::]<command> [args...]"]
         return "Tools:\n" + "\n".join(tool_lines) + "\n\nShortcuts:\n" + "\n".join(shortcuts)
     if input_text == "/status":
-        return await _format_status()
+        return await _format_status(context.get("permissions"))
     if input_text == "/model":
         try:
             runtime = await load_runtime_config()

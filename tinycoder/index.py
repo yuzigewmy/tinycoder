@@ -19,7 +19,7 @@ from .memory.runtime import (
     create_memory_service,
 )
 from .model_router import ModelRouter
-from .permissions import PermissionManager
+from .permissions import PermissionManager, permission_mode_label
 from .prompt import build_instruction_context, build_system_prompt
 from .session import fork_session
 from .tools.index import create_default_tool_registry, hydrate_mcp_tools
@@ -132,7 +132,16 @@ async def main(argv: list[str] | None = None) -> None:
 
         session_id = str(uuid.uuid4())[:8]
         mcp_status = summarize_mcp_servers(tools.get_mcp_servers())
-        print(render_banner(runtime or {"model": "mock"}, cwd))
+        print(
+            render_banner(
+                {
+                    **(runtime or {"model": "mock"}),
+                    "permissionMode": permissions.mode,
+                    "permissionModeLabel": permission_mode_label(permissions.mode),
+                },
+                cwd,
+            )
+        )
         print("")
         for raw_input in sys.stdin:
             input_text = raw_input.strip()
@@ -156,7 +165,11 @@ async def main(argv: list[str] | None = None) -> None:
                     continue
                 local_command_result = await try_handle_local_command(
                     input_text,
-                    {"tools": tools, "memory": memory},
+                    {
+                        "tools": tools,
+                        "memory": memory,
+                        "permissions": permissions,
+                    },
                 )
                 if local_command_result is not None:
                     print(f"\n{local_command_result}\n")

@@ -4,7 +4,7 @@ import asyncio
 import os
 import sys
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 from .agent_loop import run_agent_turn
 from .background_tasks import list_background_tasks
@@ -13,6 +13,7 @@ from .compact.context_collapse import apply_context_collapse_if_needed, create_c
 from .compact.manual_compact import manual_compact
 from .compact.snip_compact import snip_compact_conversation
 from .history import clear_history_entries, load_history_entries, save_history_entries
+from .line_editor import LineEditor
 from .local_tool_shortcuts import parse_local_tool_shortcut
 from .memory.runtime import (
     active_paths_from_messages,
@@ -22,6 +23,16 @@ from .memory.runtime import (
 from .permissions import PermissionManager
 from .prompt import build_instruction_context, build_system_prompt
 from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, load_transcript, rename_session, save_session
+from .terminal_input import (
+    DISABLE_MOUSE_TRACKING,
+    ENABLE_MOUSE_TRACKING,
+    PromptRenderer,
+    TerminalGeometry,
+    WindowsConsoleInput,
+    query_posix_cursor_position,
+    terminal_size,
+)
+from .tui.input_parser import maybe_need_more_for_escape_sequence, parse_input_chunk
 from .tui.markdown import MarkdownStreamPrinter, is_markdown_path, render_markdownish
 from .ui import clear_screen, render_banner, render_permission_prompt, render_transcript_lines
 from .utils.token_estimator import compute_context_stats
@@ -212,16 +223,9 @@ def _read_interactive_line(prompt: str, history_entries: list[str] | None = None
     return _read_interactive_line_posix(prompt, history_entries or [])
 
 
-def _redraw_prompt(prompt: str, buffer: str) -> None:
-    print(f"\r{prompt}{buffer}\033[K", end="", flush=True)
-
-
-def _apply_tab_completion(prompt: str, buffer: str) -> str:
+def _apply_tab_completion(buffer: str) -> str:
     completed = complete_slash_command_name(buffer)
-    if completed and completed != buffer:
-        buffer = completed
-        _redraw_prompt(prompt, buffer)
-    return buffer
+    return completed if completed else buffer
 
 
 def _history_candidates(history_entries: list[str]) -> list[str]:
@@ -236,7 +240,7 @@ def _history_candidates(history_entries: list[str]) -> list[str]:
     return candidates
 
 
-def _apply_history_navigation(prompt: str, buffer: str, direction: int, state: dict[str, Any]) -> str:
+def _apply_history_navigation(buffer: str, direction: int, state: dict[str, Any]) -> str:
     if not buffer.startswith("/"):
         return buffer
     candidates = state.get("candidates") or []
@@ -251,13 +255,9 @@ def _apply_history_navigation(prompt: str, buffer: str, direction: int, state: d
         next_index = int(state["index"]) + (1 if direction < 0 else -1)
         if next_index < 0:
             state["index"] = None
-            next_buffer = str(state.get("draft") or "")
-            _redraw_prompt(prompt, next_buffer)
-            return next_buffer
+            return str(state.get("draft") or "")
         state["index"] = min(len(candidates) - 1, next_index)
-    next_buffer = candidates[int(state["index"])]
-    _redraw_prompt(prompt, next_buffer)
-    return next_buffer
+    return candidates[int(state["index"])]
 
 
 def _reset_history_navigation(state: dict[str, Any]) -> None:
@@ -272,40 +272,159 @@ def _format_history_entries(history_entries: list[str], limit: int = 50) -> str:
     return "\n".join(f"{str(index).rjust(width)}. {entry}" for index, entry in enumerate(candidates, 1))
 
 
-def _read_interactive_line_windows(prompt: str, history_entries: list[str]) -> str:
+def _apply_editor_event(
+    editor: LineEditor,
+    event: dict[str, Any],
+    history_state: dict[str, Any],
+    renderer: PromptRenderer,
+) -> str:
+    kind = event.get("kind")
+    if kind == "resize":
+        renderer.update_size(
+            int(event.get("columns") or renderer.columns),
+            int(event.get("rows") or renderer.rows),
+        )
+        return "redraw"
+    if kind == "mouse":
+        if event.get("button") != "left" or event.get("action") != "press":
+            return "none"
+        origin_y = renderer.origin_y
+        click_y = int(event.get("y") or 0)
+        if origin_y is None:
+            origin_y = 0
+            click_y = 0
+        changed = editor.move_to_screen_position(
+            x=int(event.get("x") or 0),
+            y=click_y,
+            origin_x=renderer.origin_x,
+            origin_y=origin_y,
+            terminal_columns=renderer.columns,
+            prompt_width=renderer.prompt_width,
+        )
+        return "redraw" if changed else "none"
+    if kind == "text":
+        if event.get("ctrl"):
+            if str(event.get("text") or "").lower() == "c":
+                raise KeyboardInterrupt
+            return "none"
+        editor.insert(str(event.get("text") or ""))
+        _reset_history_navigation(history_state)
+        return "redraw"
+    if kind != "key":
+        return "none"
+
+    name = str(event.get("name") or "")
+    if name == "return":
+        return "submit"
+    if name == "interrupt":
+        raise KeyboardInterrupt
+    repeat = max(1, int(event.get("repeat") or 1))
+    changed = False
+    for _ in range(repeat):
+        if name == "left":
+            changed = editor.move_left() or changed
+        elif name == "right":
+            changed = editor.move_right() or changed
+        elif name == "home":
+            changed = editor.move_home() or changed
+        elif name == "end":
+            changed = editor.move_end() or changed
+        elif name == "backspace":
+            if editor.backspace():
+                _reset_history_navigation(history_state)
+                changed = True
+        elif name == "delete":
+            if editor.delete():
+                _reset_history_navigation(history_state)
+                changed = True
+        elif name == "tab":
+            completed = _apply_tab_completion(editor.text)
+            if completed != editor.text:
+                editor.replace(completed)
+                changed = True
+            _reset_history_navigation(history_state)
+        elif name in {"up", "down"}:
+            direction = -1 if name == "up" else 1
+            moved = editor.move_vertical(
+                direction,
+                terminal_columns=renderer.columns,
+                prompt_width=renderer.prompt_width,
+                origin_x=renderer.origin_x,
+            )
+            if moved:
+                changed = True
+                continue
+            next_text = _apply_history_navigation(editor.text, direction, history_state)
+            if next_text != editor.text:
+                editor.replace(next_text)
+                changed = True
+    return "redraw" if changed else "none"
+
+
+def _run_line_editor(
+    editor: LineEditor,
+    renderer: PromptRenderer,
+    history_state: dict[str, Any],
+    read_event: Callable[[], dict[str, Any]],
+) -> str:
+    renderer.redraw(editor)
+    while True:
+        action = _apply_editor_event(editor, read_event(), history_state, renderer)
+        if action == "submit":
+            renderer.finish(editor)
+            return editor.text
+        if action == "redraw":
+            renderer.redraw(editor)
+
+
+def _read_interactive_line_windows_fallback(prompt: str, history_entries: list[str]) -> str:
     import msvcrt
 
-    buffer = ""
+    editor = LineEditor()
     history_state: dict[str, Any] = {"candidates": _history_candidates(history_entries), "index": None, "draft": ""}
-    print(prompt, end="", flush=True)
-    while True:
+    columns, rows = terminal_size()
+    renderer = PromptRenderer(prompt, TerminalGeometry(0, None, columns, rows))
+    extended_keys = {
+        "G": "home",
+        "H": "up",
+        "K": "left",
+        "M": "right",
+        "O": "end",
+        "P": "down",
+        "S": "delete",
+    }
+
+    def read_event() -> dict[str, Any]:
         char = msvcrt.getwch()
-        if char in {"\r", "\n"}:
-            print("")
-            return buffer
-        if char == "\u0003":
-            raise KeyboardInterrupt
-        if char == "\t":
-            buffer = _apply_tab_completion(prompt, buffer)
-            _reset_history_navigation(history_state)
-            continue
-        if char in {"\b", "\x7f"}:
-            if buffer:
-                buffer = buffer[:-1]
-                _reset_history_navigation(history_state)
-                _redraw_prompt(prompt, buffer)
-            continue
         if char in {"\x00", "\xe0"}:
-            key = msvcrt.getwch()
-            if key == "H":
-                buffer = _apply_history_navigation(prompt, buffer, -1, history_state)
-            elif key == "P":
-                buffer = _apply_history_navigation(prompt, buffer, 1, history_state)
-            continue
-        if char >= " ":
-            buffer += char
-            _reset_history_navigation(history_state)
-            print(char, end="", flush=True)
+            name = extended_keys.get(msvcrt.getwch())
+            return {"kind": "key", "name": name} if name else {"kind": "unknown"}
+        if char in {"\r", "\n"}:
+            return {"kind": "key", "name": "return"}
+        if char == "\u0003":
+            return {"kind": "key", "name": "interrupt"}
+        if char == "\t":
+            return {"kind": "key", "name": "tab"}
+        if char in {"\b", "\x7f"}:
+            return {"kind": "key", "name": "backspace"}
+        return {"kind": "text", "text": char} if char >= " " else {"kind": "unknown"}
+
+    return _run_line_editor(editor, renderer, history_state, read_event)
+
+
+def _read_interactive_line_windows(prompt: str, history_entries: list[str]) -> str:
+    try:
+        with WindowsConsoleInput() as console:
+            editor = LineEditor()
+            history_state: dict[str, Any] = {
+                "candidates": _history_candidates(history_entries),
+                "index": None,
+                "draft": "",
+            }
+            renderer = PromptRenderer(prompt, console.geometry())
+            return _run_line_editor(editor, renderer, history_state, console.read_event)
+    except OSError:
+        return _read_interactive_line_windows_fallback(prompt, history_entries)
 
 
 def _read_interactive_line_posix(prompt: str, history_entries: list[str]) -> str:
@@ -313,53 +432,43 @@ def _read_interactive_line_posix(prompt: str, history_entries: list[str]) -> str
     import termios
     import tty
 
-    buffer = ""
+    editor = LineEditor()
     history_state: dict[str, Any] = {"candidates": _history_candidates(history_entries), "index": None, "draft": ""}
     stdin = sys.stdin
     fd = stdin.fileno()
     old_settings = termios.tcgetattr(fd)
-    print(prompt, end="", flush=True)
 
-    def read_escape_tail() -> str:
-        ready, _, _ = select.select([stdin], [], [], 0.05)
-        if not ready:
-            return ""
-        first = stdin.read(1)
-        ready, _, _ = select.select([stdin], [], [], 0.02)
-        second = stdin.read(1) if ready else ""
-        return first + second
+    def read_event() -> dict[str, Any]:
+        sequence = stdin.read(1)
+        if sequence == "\u0003":
+            return {"kind": "key", "name": "interrupt"}
+        if sequence == "\u001b":
+            while maybe_need_more_for_escape_sequence(sequence):
+                ready, _, _ = select.select([stdin], [], [], 0.05)
+                if not ready:
+                    break
+                sequence += stdin.read(1)
+        parsed = parse_input_chunk("", sequence)
+        events = parsed.get("events") or []
+        return events[0] if events else {"kind": "unknown"}
 
     try:
         tty.setraw(fd)
-        while True:
-            char = stdin.read(1)
-            if char in {"\r", "\n"}:
-                print("")
-                return buffer
-            if char == "\u0003":
-                raise KeyboardInterrupt
-            if char == "\t":
-                buffer = _apply_tab_completion(prompt, buffer)
-                _reset_history_navigation(history_state)
-                continue
-            if char in {"\x7f", "\b"}:
-                if buffer:
-                    buffer = buffer[:-1]
-                    _reset_history_navigation(history_state)
-                    _redraw_prompt(prompt, buffer)
-                continue
-            if char == "\u001b":
-                next_chars = read_escape_tail()
-                if next_chars == "[A":
-                    buffer = _apply_history_navigation(prompt, buffer, -1, history_state)
-                elif next_chars == "[B":
-                    buffer = _apply_history_navigation(prompt, buffer, 1, history_state)
-                continue
-            if char >= " ":
-                buffer += char
-                _reset_history_navigation(history_state)
-                print(char, end="", flush=True)
+        position = query_posix_cursor_position(stdin, sys.stdout)
+        columns, rows = terminal_size()
+        geometry = TerminalGeometry(
+            origin_x=position[0] if position else 0,
+            origin_y=position[1] if position else None,
+            columns=columns,
+            rows=rows,
+        )
+        renderer = PromptRenderer(prompt, geometry)
+        sys.stdout.write(ENABLE_MOUSE_TRACKING)
+        sys.stdout.flush()
+        return _run_line_editor(editor, renderer, history_state, read_event)
     finally:
+        sys.stdout.write(DISABLE_MOUSE_TRACKING)
+        sys.stdout.flush()
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 

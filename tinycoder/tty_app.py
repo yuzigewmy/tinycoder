@@ -23,7 +23,7 @@ from .permissions import PermissionManager
 from .prompt import build_instruction_context, build_system_prompt
 from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, load_transcript, rename_session, save_session
 from .tui.markdown import MarkdownStreamPrinter, is_markdown_path, render_markdownish
-from .ui import render_banner, render_permission_prompt
+from .ui import clear_screen, render_banner, render_permission_prompt, render_transcript_lines
 from .utils.token_estimator import compute_context_stats
 
 
@@ -195,6 +195,7 @@ PROMPT_RESET = "\033[0m"
 PROMPT_TEXT = "tinycoder> "
 COLORED_PROMPT = f"{PROMPT_RED}{PROMPT_TEXT}{PROMPT_RESET}"
 INTERRUPTED_MESSAGE = "已中断当前模型输出。"
+START_PAGE_HELP = "输入 /help 查看中文命令说明，输入 /exit 退出。"
 
 
 def _is_sensitive_model_command(input_text: str) -> bool:
@@ -450,16 +451,42 @@ async def _pick_resume_session(cwd: str) -> str | None:
     return _pick_session_windows(visible) if os.name == "nt" else _pick_session_posix(visible)
 
 
+def _reset_session_runtime_state(args: dict[str, Any]) -> None:
+    collapse_state = args.get("contextCollapseState")
+    if isinstance(collapse_state, dict):
+        collapse_state.clear()
+        collapse_state.update(create_context_collapse_state())
+
+    replacement_state = args.get("contentReplacementState")
+    if isinstance(replacement_state, dict):
+        replacement_state.clear()
+        replacement_state.update({"seenIds": set(), "replacements": {}})
+
+    args["instructionContext"] = ""
+
+
+def _start_new_chat(
+    messages: list[dict[str, Any]],
+    args: dict[str, Any],
+) -> str:
+    session_id = str(uuid.uuid4())[:8]
+    messages[:] = [messages[0]]
+    _reset_session_runtime_state(args)
+    args["sessionId"] = session_id
+    return session_id
+
+
 async def _resume_session(cwd: str, messages: list[dict[str, Any]], target: str, args: dict[str, Any]) -> str | None:
     loaded = await load_session(cwd, target)
     if not loaded:
         print("Session not found.")
         return None
     messages[:] = [messages[0], *loaded]
+    _reset_session_runtime_state(args)
     restored_collapse = await load_context_collapse_state(cwd, target)
     if restored_collapse and args.get("contextCollapseState") is not None:
         args["contextCollapseState"].update(restored_collapse)
-    print(f"Resumed session {target}.")
+    args["sessionId"] = target
     return target
 
 
@@ -474,21 +501,7 @@ async def _view_session(cwd: str, session_id: str) -> None:
 
 
 def _render_view_entries(entries: list[dict[str, Any]]) -> str:
-    blocks: list[str] = []
-    for entry in entries:
-        kind = str(entry.get("kind") or "")
-        body = str(entry.get("body") or "")
-        if kind == "user":
-            blocks.append(f"{PROMPT_RED}you{PROMPT_RESET}\n{body}")
-        elif kind == "assistant":
-            blocks.append(f"\033[32massistant{PROMPT_RESET}\n{render_markdownish(body)}")
-        elif kind == "progress":
-            blocks.append(f"\033[33mprogress{PROMPT_RESET}\n{render_markdownish(body)}")
-        elif kind == "tool":
-            name = str(entry.get("toolName") or "unknown")
-            status = str(entry.get("status") or "success")
-            blocks.append(f"\033[35mtool{PROMPT_RESET} {name} {status}\n{render_markdownish(body)}")
-    return "\n\n---\n\n".join(blocks)
+    return "\n".join(render_transcript_lines(entries))
 
 
 async def _refresh_runtime(args: dict[str, Any]) -> dict[str, Any]:
@@ -503,6 +516,47 @@ async def _refresh_runtime(args: dict[str, Any]) -> dict[str, Any]:
     return runtime
 
 
+def _render_session_workspace(
+    runtime: dict[str, Any],
+    cwd: str,
+    *,
+    session_id: str | None = None,
+    entries: list[dict[str, Any]] | None = None,
+) -> str:
+    sections = [render_banner(runtime, cwd), START_PAGE_HELP]
+    if session_id and entries:
+        sections.extend(
+            [
+                "",
+                f"[session {session_id}]",
+                "",
+                _render_view_entries(entries),
+            ]
+        )
+    return "\n".join(sections)
+
+
+async def _show_session_workspace(
+    cwd: str,
+    args: dict[str, Any],
+    *,
+    session_id: str | None = None,
+    repaint: bool,
+) -> None:
+    runtime = await _refresh_runtime(args)
+    entries = await load_transcript(cwd, session_id) if session_id else None
+    if repaint:
+        clear_screen()
+    print(
+        _render_session_workspace(
+            runtime,
+            cwd,
+            session_id=session_id,
+            entries=entries,
+        )
+    )
+
+
 async def _refresh_system_prompt(args: dict[str, Any]) -> None:
     args["messages"][0] = {"role": "system", "content": await build_system_prompt(args["cwd"], args["permissions"].get_summary(), {"skills": args["tools"].get_skills(), "mcpServers": args["tools"].get_mcp_servers()})}
 
@@ -513,22 +567,32 @@ async def run_tty_app(args: dict[str, Any]) -> None:
     permissions.prompt = _permission_prompt
     messages = args["messages"]
     session_id = args.get("sessionId") or "default"
+    args["sessionId"] = session_id
     already_saved_count = int(args.get("alreadySavedCount") or 0)
     history = load_history_entries()
     resume_target = args.get("resumeTarget")
+    resumed_at_start: str | None = None
     if resume_target and resume_target != "picker":
         resumed = await _resume_session(cwd, messages, str(resume_target), args)
         if resumed:
             session_id = resumed
+            resumed_at_start = resumed
+            already_saved_count = 0
     elif resume_target == "picker":
         target = await _pick_resume_session(cwd)
         if target:
             resumed = await _resume_session(cwd, messages, target, args)
             if resumed:
                 session_id = resumed
+                resumed_at_start = resumed
+                already_saved_count = 0
 
-    print(render_banner(args.get("runtime") or {}, cwd))
-    print("输入 /help 查看中文命令说明，输入 /exit 退出。")
+    await _show_session_workspace(
+        cwd,
+        args,
+        session_id=resumed_at_start,
+        repaint=False,
+    )
 
     while True:
         try:
@@ -544,6 +608,11 @@ async def run_tty_app(args: dict[str, Any]) -> None:
         if not _is_sensitive_model_command(input_text):
             history.append(input_text)
         try:
+            if input_text == "/newchat":
+                session_id = _start_new_chat(messages, args)
+                already_saved_count = 0
+                await _show_session_workspace(cwd, args, repaint=True)
+                continue
             if input_text == "/new":
                 await clear_session(cwd, session_id)
                 messages[:] = [messages[0]]
@@ -569,12 +638,26 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     resumed = await _resume_session(cwd, messages, target, args)
                     if resumed:
                         session_id = resumed
+                        already_saved_count = 0
+                        await _show_session_workspace(
+                            cwd,
+                            args,
+                            session_id=session_id,
+                            repaint=True,
+                        )
                 continue
             if input_text.startswith("/resume "):
                 target = input_text[len("/resume "):].strip()
                 resumed = await _resume_session(cwd, messages, target, args)
                 if resumed:
                     session_id = resumed
+                    already_saved_count = 0
+                    await _show_session_workspace(
+                        cwd,
+                        args,
+                        session_id=session_id,
+                        repaint=True,
+                    )
                 continue
             if input_text == "/view":
                 await _view_session(cwd, session_id)

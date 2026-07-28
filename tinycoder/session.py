@@ -378,19 +378,62 @@ async def load_transcript(cwd: str, session_id: str) -> list[dict[str, Any]] | N
     lines = _read_lines(session_file_path(cwd, session_id))
     if not lines:
         return None
-    events = reconstruct_snipped_events([event for line in lines if (event := parse_event(line))])
+    events = [event for line in lines if (event := parse_event(line))]
     entries: list[dict[str, Any]] = []
+    tool_names: dict[str, str] = {}
+    seen_event_ids: set[str] = set()
+
+    def display_text(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if value is None:
+            return ""
+        return json.dumps(value, ensure_ascii=False)
+
     for event in events:
+        event_id = str(event.get("uuid") or "")
+        if event_id and event_id in seen_event_ids:
+            continue
+        if event_id:
+            seen_event_ids.add(event_id)
         msg = event.get("message") if isinstance(event.get("message"), dict) else {}
         event_type = event.get("type")
         if event_type == "user":
+            if msg.get("synthetic"):
+                continue
             entries.append({"kind": "user", "body": msg.get("content") if isinstance(msg.get("content"), str) else ""})
         elif event_type == "assistant":
             entries.append({"kind": "assistant", "body": msg.get("content") if isinstance(msg.get("content"), str) else ""})
         elif event_type == "progress":
             entries.append({"kind": "progress", "body": msg.get("content") if isinstance(msg.get("content"), str) else ""})
         elif event_type == "tool_call":
-            entries.append({"kind": "tool", "toolName": msg.get("toolName") if isinstance(msg.get("toolName"), str) else "unknown", "status": "success", "body": json.dumps(msg.get("input") or "", ensure_ascii=False)})
+            tool_use_id = str(msg.get("toolUseId") or "")
+            tool_name = msg.get("toolName") if isinstance(msg.get("toolName"), str) else "unknown"
+            if tool_use_id:
+                tool_names[tool_use_id] = tool_name
+            entries.append(
+                {
+                    "kind": "tool",
+                    "toolName": tool_name,
+                    "status": "running",
+                    "body": display_text(msg.get("input")),
+                }
+            )
+        elif event_type == "tool_result":
+            tool_use_id = str(msg.get("toolUseId") or "")
+            tool_name = (
+                msg.get("toolName")
+                if isinstance(msg.get("toolName"), str)
+                else tool_names.get(tool_use_id, "unknown")
+            )
+            entries.append(
+                {
+                    "kind": "tool",
+                    "toolName": tool_name,
+                    "status": "error" if msg.get("isError") else "success",
+                    "body": display_text(msg.get("content")),
+                }
+            )
         elif event_type == "summary":
             entries.append({"kind": "assistant", "body": f"[Context summary: {msg.get('compressedCount') or 0} messages compressed]"})
         elif event_type == "compact_boundary":

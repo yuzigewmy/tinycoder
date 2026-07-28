@@ -78,6 +78,7 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"name": "/resume", "usage": "/resume <id>", "description": "恢复指定会话。"},
     {"name": "/view", "usage": "/view", "description": "查看当前历史会话内容。"},
     {"name": "/rename", "usage": "/rename <name>", "description": "重命名当前会话。"},
+    {"name": "/newchat", "usage": "/newchat", "description": "保留当前会话并打开一个新的空白会话页面。"},
     {"name": "/new", "usage": "/new", "description": "清空当前会话并重新开始。"},
     {"name": "/fork", "usage": "/fork", "description": "将当前会话分叉为新的独立会话。"},
     {"name": "/permissions", "usage": "/permissions", "description": "查看权限配置存储路径。"},

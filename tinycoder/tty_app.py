@@ -13,8 +13,9 @@ from .compact.manual_compact import manual_compact
 from .compact.snip_compact import snip_compact_conversation
 from .history import clear_history_entries, load_history_entries, save_history_entries
 from .local_tool_shortcuts import parse_local_tool_shortcut
+from .memory.runtime import create_memory_context_provider
 from .permissions import PermissionManager
-from .prompt import build_system_prompt
+from .prompt import build_instruction_context, build_system_prompt
 from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, load_transcript, rename_session, save_session
 from .tui.markdown import MarkdownStreamPrinter, is_markdown_path, render_markdownish
 from .ui import render_banner, render_permission_prompt
@@ -499,6 +500,7 @@ async def _refresh_runtime(args: dict[str, Any]) -> dict[str, Any]:
 
 async def _refresh_system_prompt(args: dict[str, Any]) -> None:
     args["messages"][0] = {"role": "system", "content": await build_system_prompt(args["cwd"], args["permissions"].get_summary(), {"skills": args["tools"].get_skills(), "mcpServers": args["tools"].get_mcp_servers()})}
+    args["instructionContext"] = await build_instruction_context(args["cwd"])
 
 
 async def run_tty_app(args: dict[str, Any]) -> None:
@@ -617,7 +619,10 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                 tasks = list_background_tasks()
                 print("\n".join(f"{t.get('taskId')} pid={t.get('pid')} status={t.get('status')} {t.get('command')}" for t in tasks) if tasks else "No background tasks.")
                 continue
-            local_result = await try_handle_local_command(input_text, {"tools": args["tools"]})
+            local_result = await try_handle_local_command(
+                input_text,
+                {"tools": args["tools"], "memory": args.get("memory")},
+            )
             if local_result is not None:
                 if _is_model_config_command(input_text):
                     await _refresh_runtime(args)
@@ -648,6 +653,11 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     "cwd": cwd,
                     "permissions": permissions,
                     "modelName": (runtime or {}).get("model") or "",
+                    "instructionContext": args.get("instructionContext") or "",
+                    "memoryContextProvider": create_memory_context_provider(
+                        args.get("memory"),
+                        session_id=session_id,
+                    ),
                     "contentReplacementState": args.get("contentReplacementState"),
                     "contextCollapseState": args.get("contextCollapseState"),
                     "onToolStart": _render_tool_start,

@@ -23,6 +23,7 @@ class TinyCoderSettings(TypedDict, total=False):
     maxOutputTokens: int
     mcpServers: dict[str, McpServerConfig]
     customProviders: dict[str, dict[str, str | int]]
+    memory: dict[str, Any]
 
 
 class RuntimeConfig(TypedDict, total=False):
@@ -46,6 +47,8 @@ TINYCODER_PERMISSIONS_PATH = TINYCODER_DIR / "permissions.json"
 TINYCODER_MCP_PATH = TINYCODER_DIR / "mcp.json"
 TINYCODER_MCP_TOKENS_PATH = TINYCODER_DIR / "mcp-tokens.json"
 TINYCODER_PROJECTS_DIR = TINYCODER_DIR / "projects"
+TINYCODER_MEMORY_DIR = TINYCODER_DIR / "memory"
+TINYCODER_MEMORY_DB_PATH = TINYCODER_MEMORY_DIR / "memory.db"
 CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 PROJECT_MCP_PATH = Path.cwd() / ".mcp.json"
 
@@ -116,6 +119,7 @@ def merge_settings(base: TinyCoderSettings, override: TinyCoderSettings) -> Tiny
         "env": {**(base.get("env") or {}), **(override.get("env") or {})},
         "mcpServers": merged_servers,
         "customProviders": {**(base.get("customProviders") or {}), **(override.get("customProviders") or {})},
+        "memory": {**(base.get("memory") or {}), **(override.get("memory") or {})},
     }
     return result
 

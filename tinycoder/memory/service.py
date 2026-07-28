@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +41,11 @@ class MemoryService:
 
     def close(self) -> None:
         self.store.close()
+
+    def set_mode(self, mode: str) -> None:
+        if mode not in {"off", "read_only", "suggest", "auto"}:
+            raise ValueError(f"unsupported memory mode: {mode}")
+        self.settings = replace(self.settings, mode=mode)
 
     def add(
         self,

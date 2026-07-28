@@ -47,6 +47,17 @@ class TurnControllerTests(unittest.TestCase):
         self.assertIsNotNone(stopped)
         self.assertEqual(stopped.code, "max_wall_seconds")
 
+    def test_remaining_wall_time_never_becomes_negative(self) -> None:
+        clock = MutableClock()
+        controller = TurnController(TurnBudget(max_wall_seconds=10), clock=clock)
+
+        clock.value += 4
+        remaining = controller.remaining_seconds()
+        clock.value += 20
+
+        self.assertEqual(remaining, 6)
+        self.assertEqual(controller.remaining_seconds(), 0)
+
     def test_third_identical_action_requests_reflection_then_stops_if_repeated(self) -> None:
         controller = TurnController(TurnBudget(max_same_action_repeats=2))
 
@@ -156,6 +167,16 @@ class TurnControllerTests(unittest.TestCase):
 
         self.assertEqual(direct_stop.code, "max_cost_usd")
         self.assertEqual(calculated_stop.code, "max_cost_usd")
+
+    def test_cost_budget_fails_closed_when_usage_cannot_be_priced(self) -> None:
+        controller = TurnController(TurnBudget(max_cost_usd=1.0))
+
+        stopped = controller.record_model_usage(
+            {"inputTokens": 100, "outputTokens": 20, "totalTokens": 120}
+        )
+
+        self.assertIsNotNone(stopped)
+        self.assertEqual(stopped.code, "cost_accounting_unavailable")
 
     def test_budget_can_be_overridden_from_agent_arguments(self) -> None:
         budget = TurnBudget.from_args(

@@ -161,6 +161,17 @@ class TurnController:
     def _elapsed_seconds(self) -> float:
         return max(0.0, self.clock() - self.started_at)
 
+    def remaining_seconds(self) -> float:
+        return max(0.0, self.budget.max_wall_seconds - self._elapsed_seconds())
+
+    def wall_timeout_reason(self) -> TurnStopReason:
+        elapsed = self._elapsed_seconds()
+        return self._reason(
+            "max_wall_seconds",
+            "回合总耗时已达到安全上限",
+            f"elapsedSeconds={round(elapsed, 3)}, limit={self.budget.max_wall_seconds}",
+        )
+
     def snapshot(self) -> dict[str, Any]:
         return {
             "modelSteps": self.model_steps,
@@ -177,11 +188,7 @@ class TurnController:
     def check_limits(self) -> TurnStopReason | None:
         elapsed = self._elapsed_seconds()
         if elapsed >= self.budget.max_wall_seconds:
-            return self._reason(
-                "max_wall_seconds",
-                "回合总耗时已达到安全上限",
-                f"elapsedSeconds={round(elapsed, 3)}, limit={self.budget.max_wall_seconds}",
-            )
+            return self.wall_timeout_reason()
         if self.budget.max_tokens is not None and self.total_tokens >= self.budget.max_tokens:
             return self._reason(
                 "max_tokens",
@@ -367,8 +374,25 @@ class TurnController:
             total_tokens = input_tokens + output_tokens
         self.total_tokens += total_tokens
 
+        has_explicit_cost = usage.get("costUsd") is not None
         explicit_cost = _non_negative_float(usage.get("costUsd"))
-        if explicit_cost > 0:
+        can_price_input = input_tokens == 0 or self.budget.input_cost_per_million is not None
+        can_price_output = output_tokens == 0 or self.budget.output_cost_per_million is not None
+        if (
+            self.budget.max_cost_usd is not None
+            and not has_explicit_cost
+            and not (can_price_input and can_price_output)
+        ):
+            return TurnStopReason(
+                code="cost_accounting_unavailable",
+                summary="已配置费用上限，但当前模型用量无法换算为费用",
+                detail=(
+                    "Provider usage did not include costUsd and the configured "
+                    "input/output per-million token prices are incomplete"
+                ),
+                recoverable=False,
+            )
+        if has_explicit_cost:
             self.total_cost_usd += explicit_cost
         else:
             if self.budget.input_cost_per_million is not None:

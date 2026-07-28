@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from .models import MemoryItem, MemoryQuery, MemorySearchResult, UpsertOutcome
 
@@ -13,5 +13,11 @@ class MemoryStore(Protocol):
     def search(self, query: MemoryQuery) -> list[MemorySearchResult]: ...
 
     def delete(self, memory_id: str, *, reason: str) -> bool: ...
+
+    def set_status(self, memory_id: str, status: str, *, reason: str) -> bool: ...
+
+    def resolve_conflict(self, winner_id: str, *, reason: str) -> int: ...
+
+    def audit_history(self, memory_id: str, *, limit: int = 100) -> list[dict[str, Any]]: ...
 
     def close(self) -> None: ...

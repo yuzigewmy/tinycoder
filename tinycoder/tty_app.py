@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import uuid
 from typing import Any
 
 from .agent_loop import run_agent_turn
@@ -13,7 +14,11 @@ from .compact.manual_compact import manual_compact
 from .compact.snip_compact import snip_compact_conversation
 from .history import clear_history_entries, load_history_entries, save_history_entries
 from .local_tool_shortcuts import parse_local_tool_shortcut
-from .memory.runtime import create_memory_context_provider
+from .memory.runtime import (
+    active_paths_from_messages,
+    capture_memory_turn,
+    create_memory_context_provider,
+)
 from .permissions import PermissionManager
 from .prompt import build_instruction_context, build_system_prompt
 from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, load_transcript, rename_session, save_session
@@ -500,7 +505,6 @@ async def _refresh_runtime(args: dict[str, Any]) -> dict[str, Any]:
 
 async def _refresh_system_prompt(args: dict[str, Any]) -> None:
     args["messages"][0] = {"role": "system", "content": await build_system_prompt(args["cwd"], args["permissions"].get_summary(), {"skills": args["tools"].get_skills(), "mcpServers": args["tools"].get_mcp_servers()})}
-    args["instructionContext"] = await build_instruction_context(args["cwd"])
 
 
 async def run_tty_app(args: dict[str, Any]) -> None:
@@ -640,7 +644,20 @@ async def run_tty_app(args: dict[str, Any]) -> None:
 
             await _refresh_system_prompt(args)
             runtime = await _refresh_runtime(args)
-            messages.append({"role": "user", "content": input_text})
+            user_event_id = str(uuid.uuid4())
+            messages.append(
+                {
+                    "role": "user",
+                    "content": input_text,
+                    "eventId": user_event_id,
+                }
+            )
+            args["instructionContext"] = await build_instruction_context(
+                cwd,
+                {
+                    "activePaths": active_paths_from_messages(messages),
+                },
+            )
             permissions.begin_turn()
             stream_printer = MarkdownStreamPrinter()
             stream_filter = AssistantStreamFilter(stream_printer)
@@ -675,7 +692,14 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                         "Do not repeat the raw traceback or raw exception as the main answer. "
                         f"Error summary: {first_error}"
                     )
-                    messages.append({"role": "user", "content": recovery_prompt})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": recovery_prompt,
+                            "synthetic": True,
+                            "contextKind": "agent_recovery",
+                        }
+                    )
                     try:
                         turn_args["messages"] = messages
                         messages[:] = await run_agent_turn(turn_args)
@@ -693,6 +717,12 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     print(f"\n{INTERRUPTED_MESSAGE}\n")
                 permissions.end_turn()
                 await save_session(cwd, session_id, messages, already_saved_count)
+                capture_memory_turn(
+                    args.get("memory"),
+                    messages,
+                    session_id=session_id,
+                    event_id=user_event_id,
+                )
         except Exception as error:
             print(f"\n{_render_assistant_output(_analyze_error(error))}\n")
     try:

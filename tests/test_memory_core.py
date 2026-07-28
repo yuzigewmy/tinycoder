@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -27,9 +28,28 @@ class MemoryModelTests(unittest.TestCase):
                 project_id="project-a",
                 scope="project_local",
                 kind="fact",
+                canonical_key="project.expiry",
+                content="Temporary fact.",
+                confidence=0.9,
+                expires_at="not-a-timestamp",
+            )
+        with self.assertRaises(ValueError):
+            MemoryItem.create(
+                project_id="project-a",
+                scope="project_local",
+                kind="fact",
                 canonical_key="project.test.framework",
                 content="Uses unittest.",
                 confidence=1.1,
+            )
+        with self.assertRaises(ValueError):
+            MemoryItem.create(
+                project_id="project-a",
+                scope="project_local",
+                kind="fact",
+                canonical_key="x" * 257,
+                content="Uses unittest.",
+                confidence=0.9,
             )
 
     def test_query_applies_safe_recall_limits(self) -> None:
@@ -83,6 +103,23 @@ class SQLiteMemoryStoreTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.store.close()
         self.tempdir.cleanup()
+
+    def test_store_refuses_to_downgrade_a_future_schema(self) -> None:
+        path = Path(self.tempdir.name) / "future.db"
+        connection = sqlite3.connect(path)
+        try:
+            connection.execute(
+                "CREATE TABLE memory_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO memory_metadata(key, value) VALUES('schema_version', '999')"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        with self.assertRaises(RuntimeError):
+            SQLiteMemoryStore(path)
 
     def test_upsert_persists_and_searches_only_the_requested_project(self) -> None:
         item = MemoryItem.create(

@@ -118,6 +118,31 @@ class MemoryContextTests(unittest.TestCase):
 
 
 class InstructionResolverTests(unittest.TestCase):
+    def test_large_instruction_file_is_bounded_before_context_injection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            user_home = project / "home"
+            tinycoder_home = project / "tiny-home"
+            user_home.mkdir()
+            tinycoder_home.mkdir()
+            project.joinpath("CLAUDE.md").write_text(
+                "x" * (150 * 1024),
+                encoding="utf-8",
+            )
+
+            documents = load_instruction_documents(
+                project,
+                user_home=user_home,
+                tinycoder_home=tinycoder_home,
+            )
+            project_document = next(
+                document
+                for document in documents
+                if document.path == str(project / "CLAUDE.md")
+            )
+
+        self.assertLessEqual(len(project_document.content.encode("utf-8")), 100 * 1024)
+
     def test_loads_scoped_instructions_rules_and_bounded_memory_index(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

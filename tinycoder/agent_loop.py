@@ -162,7 +162,12 @@ async def run_agent_turn(args: dict[str, Any]) -> list[dict[str, Any]]:
         if decision.action == "recover" and decision.reason:
             commit_messages([
                 *messages,
-                {"role": "user", "content": format_recovery_prompt(decision.reason)},
+                {
+                    "role": "user",
+                    "content": format_recovery_prompt(decision.reason),
+                    "synthetic": True,
+                    "contextKind": "agent_recovery",
+                },
             ])
             await checkpoint()
         return None
@@ -177,7 +182,17 @@ async def run_agent_turn(args: dict[str, Any]) -> list[dict[str, Any]]:
             target["consecutiveFailures"] = int(next_state.get("consecutiveFailures", 0))
 
     def push_continuation_prompt(content: str) -> None:
-        commit_messages([*messages, {"role": "user", "content": content}])
+        commit_messages(
+            [
+                *messages,
+                {
+                    "role": "user",
+                    "content": content,
+                    "synthetic": True,
+                    "contextKind": "agent_recovery",
+                },
+            ]
+        )
 
     def append_thinking_blocks(blocks: list[dict[str, Any]] | None) -> None:
         if blocks:

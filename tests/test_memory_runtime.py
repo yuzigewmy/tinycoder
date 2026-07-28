@@ -5,13 +5,31 @@ import unittest
 from pathlib import Path
 
 from tinycoder.memory.runtime import (
+    active_paths_from_messages,
     create_memory_context_provider,
     create_memory_service,
+    latest_user_event_id,
     latest_user_text,
 )
 
 
 class MemoryRuntimeTests(unittest.TestCase):
+    def test_active_paths_are_inferred_from_user_and_tool_messages(self) -> None:
+        paths = active_paths_from_messages(
+            [
+                {"role": "user", "content": "Please update tinycoder/index.py and README.md."},
+                {
+                    "role": "assistant_tool_call",
+                    "toolName": "read_file",
+                    "input": {"path": "tinycoder/memory/service.py"},
+                },
+            ]
+        )
+        self.assertEqual(
+            paths,
+            ["tinycoder/memory/service.py", "tinycoder/index.py", "README.md"],
+        )
+
     def test_factory_applies_config_and_provider_recalls_for_latest_real_user(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -62,4 +80,18 @@ class MemoryRuntimeTests(unittest.TestCase):
                 ]
             ),
             "real task",
+        )
+        self.assertEqual(
+            latest_user_event_id(
+                [
+                    {"role": "user", "content": "real task", "eventId": "event-1"},
+                    {
+                        "role": "user",
+                        "content": "continue",
+                        "synthetic": True,
+                        "contextKind": "agent_recovery",
+                    },
+                ]
+            ),
+            "event-1",
         )

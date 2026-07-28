@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -95,6 +96,44 @@ class MemoryCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("project.test.command", listed)
         self.assertIn("Run unittest discovery.", shown)
         self.assertIn("forgotten", forgotten)
+
+    async def test_memory_review_and_audit_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            service = MemoryService(
+                project,
+                store_path=root / "memory.db",
+                settings=MemorySettings(mode="suggest"),
+            )
+            try:
+                service.capture_turn(
+                    [
+                        {"role": "user", "content": "I prefer concise technical reports."},
+                        {"role": "assistant", "content": "Understood."},
+                    ],
+                    session_id="s1",
+                    event_id="s1:2",
+                )
+                item = service.list()[0]
+                pending = await try_handle_local_command("/memory pending", {"memory": service})
+                approved = await try_handle_local_command(
+                    f"/memory approve {item.id}",
+                    {"memory": service},
+                )
+                history = await try_handle_local_command(
+                    f"/memory history {item.id}",
+                    {"memory": service},
+                )
+                exported = await try_handle_local_command("/memory export", {"memory": service})
+            finally:
+                service.close()
+
+        self.assertIn(item.id, pending)
+        self.assertIn("approved", approved)
+        self.assertIn("operation=status", history)
+        self.assertEqual(json.loads(exported)["schemaVersion"], 1)
 
 
 class AgentLoopMemoryTests(unittest.IsolatedAsyncioTestCase):

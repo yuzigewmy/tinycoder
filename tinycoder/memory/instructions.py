@@ -11,6 +11,8 @@ from .identity import resolve_project_identity
 
 MEMORY_MAX_LINES = 200
 MEMORY_MAX_BYTES = 25 * 1024
+INSTRUCTION_MAX_BYTES = 100 * 1024
+TOTAL_CONTEXT_MAX_BYTES = 512 * 1024
 
 
 @dataclass(frozen=True)
@@ -22,15 +24,15 @@ class InstructionDocument:
 
 
 def _read_text(path: Path, *, memory_limit: bool = False) -> str | None:
+    limit = MEMORY_MAX_BYTES if memory_limit else INSTRUCTION_MAX_BYTES
     try:
-        text = path.read_text(encoding="utf-8")
+        with path.open("rb") as handle:
+            text = handle.read(limit + 1)[:limit].decode("utf-8", "ignore")
     except OSError:
         return None
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     if memory_limit:
         text = "\n".join(text.splitlines()[:MEMORY_MAX_LINES])
-        encoded = text.encode("utf-8")
-        if len(encoded) > MEMORY_MAX_BYTES:
-            text = encoded[:MEMORY_MAX_BYTES].decode("utf-8", "ignore")
     return text.strip() or None
 
 
@@ -137,6 +139,7 @@ def load_instruction_documents(
 
     documents: list[InstructionDocument] = []
     seen: set[str] = set()
+    total_bytes = 0
     for path, scope, is_memory in candidates:
         key = str(path.resolve()).casefold()
         if key in seen:
@@ -149,6 +152,13 @@ def load_instruction_documents(
             patterns, content = _frontmatter_paths(content)
             if not _rule_applies(patterns, active):
                 continue
+        remaining = TOTAL_CONTEXT_MAX_BYTES - total_bytes
+        if remaining <= 0:
+            break
+        encoded = content.encode("utf-8")
+        if len(encoded) > remaining:
+            content = encoded[:remaining].decode("utf-8", "ignore").rstrip()
+        total_bytes += len(content.encode("utf-8"))
         documents.append(
             InstructionDocument(path=str(path), scope=scope, content=content, is_memory=is_memory)
         )

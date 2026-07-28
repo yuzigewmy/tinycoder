@@ -27,6 +27,15 @@ def _usage() -> str:
             "  /memory add <scope> <kind> <key>::<content>",
             "  /memory forget <id>",
             "  /memory conflicts",
+            "  /memory resolve <winner-id>",
+            "  /memory pending",
+            "  /memory approve <id>",
+            "  /memory reject <id>",
+            "  /memory stale <id>",
+            "  /memory history <id>",
+            "  /memory export",
+            "  /memory import <json>",
+            "  /memory graph",
             "  /memory mode <off|read_only|suggest|auto>",
         ]
     )
@@ -61,6 +70,66 @@ def handle_memory_command(command: str, service: MemoryService | None) -> str:
     if text == "/memory conflicts":
         items = [item for item in service.list(limit=200) if item.status == "disputed"]
         return "\n\n".join(_format_item(item) for item in items) or "no memory conflicts"
+    if text.startswith("/memory resolve "):
+        memory_id = text[len("/memory resolve ") :].strip()
+        try:
+            resolved = service.resolve_conflict(memory_id)
+        except (RuntimeError, ValueError) as error:
+            return f"memory conflict resolution rejected: {error}"
+        return (
+            f"resolved conflict winner={memory_id} superseded={resolved}"
+            if resolved
+            else f"memory conflict not found: {memory_id}"
+        )
+    if text == "/memory pending":
+        items = [item for item in service.list(limit=200) if item.status == "pending_review"]
+        return "\n\n".join(_format_item(item) for item in items) or "no pending memories"
+    for command, status, reason, verb in (
+        ("/memory approve ", "active", "user approved", "approved"),
+        ("/memory reject ", "quarantined", "user rejected", "rejected"),
+        ("/memory stale ", "stale", "user marked stale", "marked stale"),
+    ):
+        if text.startswith(command):
+            memory_id = text[len(command) :].strip()
+            try:
+                changed = service.set_status(memory_id, status, reason=reason)
+            except (RuntimeError, ValueError) as error:
+                return f"memory update rejected: {error}"
+            return f"{verb} id={memory_id}" if changed else f"memory not found: {memory_id}"
+    if text.startswith("/memory history "):
+        memory_id = text[len("/memory history ") :].strip()
+        history = service.history(memory_id)
+        if not history:
+            return f"memory not found or has no history: {memory_id}"
+        return "\n".join(
+            (
+                f"{entry['createdAt']} operation={entry['operation']} "
+                f"reason={entry.get('reason') or '-'}"
+            )
+            for entry in history
+        )
+    if text == "/memory export":
+        return service.export_json()
+    if text.startswith("/memory import "):
+        payload = text[len("/memory import ") :].strip()
+        try:
+            count = service.import_json(payload)
+        except (RuntimeError, ValueError) as error:
+            return f"memory import rejected: {error}"
+        return f"imported {count} memories"
+    if text == "/memory graph":
+        graph = service.project_graph()
+        lines = [
+            f"entities={len(graph['entities'])} edges={len(graph['edges'])}",
+            *[
+                (
+                    f"{edge['source']} -[{edge['relation']}]-> "
+                    f"{edge['target']} memory={edge.get('memoryId') or '-'}"
+                )
+                for edge in graph["edges"]
+            ],
+        ]
+        return "\n".join(lines)
     if text.startswith("/memory add "):
         payload = text[len("/memory add ") :].strip()
         header, separator, content = payload.partition("::")

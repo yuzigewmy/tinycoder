@@ -68,6 +68,10 @@ class MemoryItem:
             raise ValueError("memory id is required")
         if not self.canonical_key:
             raise ValueError("canonical_key is required")
+        if len(self.canonical_key) > 256:
+            raise ValueError("canonical_key exceeds 256 characters")
+        if any(ord(character) < 32 for character in self.canonical_key):
+            raise ValueError("canonical_key contains control characters")
         if not self.content:
             raise ValueError("memory content is required")
         if self.scope not in VALID_SCOPES:
@@ -82,6 +86,13 @@ class MemoryItem:
             raise ValueError("confidence must be between 0 and 1")
         if self.scope in {"project_shared", "project_local", "session"} and not self.project_id:
             raise ValueError(f"project_id is required for scope={self.scope}")
+        if self.expires_at:
+            try:
+                expiry = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
+            except ValueError as error:
+                raise ValueError("expires_at must be an ISO-8601 timestamp") from error
+            if expiry.tzinfo is None:
+                raise ValueError("expires_at must include a timezone")
 
     @classmethod
     def create(

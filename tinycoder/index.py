@@ -12,7 +12,12 @@ from .compact.context_collapse import apply_context_collapse_if_needed, create_c
 from .config import load_effective_settings, load_runtime_config
 from .manage_cli import maybe_handle_management_command
 from .mcp_status import summarize_mcp_servers
-from .memory.runtime import create_memory_context_provider, create_memory_service
+from .memory.runtime import (
+    active_paths_from_messages,
+    capture_memory_turn,
+    create_memory_context_provider,
+    create_memory_service,
+)
 from .model_router import ModelRouter
 from .permissions import PermissionManager
 from .prompt import build_instruction_context, build_system_prompt
@@ -169,7 +174,14 @@ async def main(argv: list[str] | None = None) -> None:
                 runtime = await load_runtime_config()
             except Exception:
                 runtime = None
-            messages.append({"role": "user", "content": input_text})
+            user_event_id = str(uuid.uuid4())
+            messages.append(
+                {
+                    "role": "user",
+                    "content": input_text,
+                    "eventId": user_event_id,
+                }
+            )
             permissions.begin_turn()
             try:
                 messages[:] = await run_agent_turn({
@@ -179,7 +191,12 @@ async def main(argv: list[str] | None = None) -> None:
                     "cwd": cwd,
                     "permissions": permissions,
                     "modelName": (runtime or {}).get("model") or "",
-                    "instructionContext": await build_instruction_context(cwd),
+                    "instructionContext": await build_instruction_context(
+                        cwd,
+                        {
+                            "activePaths": active_paths_from_messages(messages),
+                        },
+                    ),
                     "memoryContextProvider": create_memory_context_provider(
                         memory,
                         session_id=session_id,
@@ -191,6 +208,12 @@ async def main(argv: list[str] | None = None) -> None:
                 messages.append({"role": "assistant", "content": analyze_error(error)})
             finally:
                 permissions.end_turn()
+            capture_memory_turn(
+                memory,
+                messages,
+                session_id=session_id,
+                event_id=user_event_id,
+            )
             last = next((m for m in reversed(messages) if m.get("role") == "assistant"), None)
             if last:
                 print(f"\n{render_markdownish(str(last.get('content') or ''))}\n")

@@ -21,6 +21,7 @@ TinyCoder Python 是一个运行在终端里的 AI 编程 Agent。它可以阅�
 - **Resilient error handling**: 遇到模型或工具异常时，Agent 会先尝试自我恢复，仍失败时再给出面向用户的原因分析和处理建议。
 - **MCP integration**: 支持 stdio、content-length、newline-json、streamable-http 等 MCP 接入方式。
 - **Skills support**: 可以从用户级或项目级目录加载 `SKILL.md` 工作流。
+- **Scoped memory**: 支持项目/用户作用域、审核与冲突状态、FTS/可选 Embedding 检索、自动提取和审计。
 - **Lightweight Python implementation**: 代码结构直接、依赖少，便于阅读、二次开发和实验。
 
 ## Agent Architecture
@@ -30,6 +31,8 @@ TinyCoder Python 是一个运行在终端里的 AI 编程 Agent。它可以阅�
 TinyCoder 的核心由终端交互层、Agent 主循环、模型路由、工具注册表、权限系统、会话上下文和扩展层组成。终端输入会先经过 `tty_app.py` 处理本地指令、历史记录和会话选择；普通自然语言请求会进入 `agent_loop.py`，由 `ModelRouter` 选择 Anthropic、Qwen 或自定义 OpenAI 兼容适配器，并在模型回复和工具调用之间循环。
 
 所有文件读写、搜索、命令执行和 Web 工具都通过 `ToolRegistry` 分发；涉及路径、命令或编辑风险的操作会交给 `PermissionManager` 确认。会话、命令历史、上下文压缩、MCP Server 和 Skills 共同构成 TinyCoder 的长期工作能力与扩展能力。
+
+记忆子系统的设计、信任边界、配置和运维说明见 [docs/memory-system.md](docs/memory-system.md)，关键架构决策见 [ADR-001](docs/decisions/001-scoped-memory.md)。
 
 ## Requirements
 
@@ -235,6 +238,11 @@ process environment
 | `/compact` | 手动压缩上下文 |
 | `/collapse` | 将旧上下文折叠成摘要 |
 | `/snip` | 不调用模型，裁剪安全上下文片段 |
+| `/memory status` | 查看记忆模式、项目身份和检索能力 |
+| `/memory list [scope]` | 列出当前项目可见记忆 |
+| `/memory add <scope> <kind> <key>::<content>` | 显式添加记忆 |
+| `/memory pending` | 查看并审核自动提取候选 |
+| `/memory mode <mode>` | 切换 `off`、`read_only`、`suggest` 或 `auto` |
 | `/exit` | 退出程序 |
 
 交互输入支持几个小但实用的行为：

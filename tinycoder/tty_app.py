@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import uuid
 from typing import Any
 
 from .agent_loop import run_agent_turn
@@ -13,8 +14,13 @@ from .compact.manual_compact import manual_compact
 from .compact.snip_compact import snip_compact_conversation
 from .history import clear_history_entries, load_history_entries, save_history_entries
 from .local_tool_shortcuts import parse_local_tool_shortcut
+from .memory.runtime import (
+    active_paths_from_messages,
+    capture_memory_turn,
+    create_memory_context_provider,
+)
 from .permissions import PermissionManager
-from .prompt import build_system_prompt
+from .prompt import build_instruction_context, build_system_prompt
 from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, load_transcript, rename_session, save_session
 from .tui.markdown import MarkdownStreamPrinter, is_markdown_path, render_markdownish
 from .ui import render_banner, render_permission_prompt
@@ -617,7 +623,10 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                 tasks = list_background_tasks()
                 print("\n".join(f"{t.get('taskId')} pid={t.get('pid')} status={t.get('status')} {t.get('command')}" for t in tasks) if tasks else "No background tasks.")
                 continue
-            local_result = await try_handle_local_command(input_text, {"tools": args["tools"]})
+            local_result = await try_handle_local_command(
+                input_text,
+                {"tools": args["tools"], "memory": args.get("memory")},
+            )
             if local_result is not None:
                 if _is_model_config_command(input_text):
                     await _refresh_runtime(args)
@@ -635,7 +644,20 @@ async def run_tty_app(args: dict[str, Any]) -> None:
 
             await _refresh_system_prompt(args)
             runtime = await _refresh_runtime(args)
-            messages.append({"role": "user", "content": input_text})
+            user_event_id = str(uuid.uuid4())
+            messages.append(
+                {
+                    "role": "user",
+                    "content": input_text,
+                    "eventId": user_event_id,
+                }
+            )
+            args["instructionContext"] = await build_instruction_context(
+                cwd,
+                {
+                    "activePaths": active_paths_from_messages(messages),
+                },
+            )
             permissions.begin_turn()
             stream_printer = MarkdownStreamPrinter()
             stream_filter = AssistantStreamFilter(stream_printer)
@@ -648,6 +670,11 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     "cwd": cwd,
                     "permissions": permissions,
                     "modelName": (runtime or {}).get("model") or "",
+                    "instructionContext": args.get("instructionContext") or "",
+                    "memoryContextProvider": create_memory_context_provider(
+                        args.get("memory"),
+                        session_id=session_id,
+                    ),
                     "contentReplacementState": args.get("contentReplacementState"),
                     "contextCollapseState": args.get("contextCollapseState"),
                     "onToolStart": _render_tool_start,
@@ -665,7 +692,14 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                         "Do not repeat the raw traceback or raw exception as the main answer. "
                         f"Error summary: {first_error}"
                     )
-                    messages.append({"role": "user", "content": recovery_prompt})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": recovery_prompt,
+                            "synthetic": True,
+                            "contextKind": "agent_recovery",
+                        }
+                    )
                     try:
                         turn_args["messages"] = messages
                         messages[:] = await run_agent_turn(turn_args)
@@ -683,6 +717,12 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     print(f"\n{INTERRUPTED_MESSAGE}\n")
                 permissions.end_turn()
                 await save_session(cwd, session_id, messages, already_saved_count)
+                capture_memory_turn(
+                    args.get("memory"),
+                    messages,
+                    session_id=session_id,
+                    event_id=user_event_id,
+                )
         except Exception as error:
             print(f"\n{_render_assistant_output(_analyze_error(error))}\n")
     try:

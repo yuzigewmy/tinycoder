@@ -12,6 +12,7 @@ from .config import (
     load_runtime_config,
     save_tinycoder_settings,
 )
+from .memory.commands import handle_memory_command
 
 SUPPORTED_MODEL_PROVIDERS: dict[str, dict[str, str]] = {
     "anthropic": {
@@ -44,6 +45,16 @@ PROVIDER_ALIASES = {
 RESERVED_PROVIDER_NAMES = {"anthropic", "claude", "qwen", "dashscope", "aliyun"}
 
 SLASH_COMMANDS: list[dict[str, str]] = [
+    {"name": "/memory", "usage": "/memory status", "description": "查看记忆系统状态。"},
+    {"name": "/memory", "usage": "/memory list [scope]", "description": "列出当前项目可见记忆。"},
+    {"name": "/memory", "usage": "/memory add <scope> <kind> <key>::<content>", "description": "显式添加一条记忆。"},
+    {"name": "/memory", "usage": "/memory show <id>", "description": "查看一条记忆及其元数据。"},
+    {"name": "/memory", "usage": "/memory forget <id>", "description": "软删除一条记忆。"},
+    {"name": "/memory", "usage": "/memory pending", "description": "查看等待用户确认的候选记忆。"},
+    {"name": "/memory", "usage": "/memory approve <id>", "description": "批准一条候选记忆。"},
+    {"name": "/memory", "usage": "/memory reject <id>", "description": "拒绝并隔离一条候选记忆。"},
+    {"name": "/memory", "usage": "/memory resolve <winner-id>", "description": "选择冲突记忆的胜出版本。"},
+    {"name": "/memory", "usage": "/memory mode <off|read_only|suggest|auto>", "description": "切换记忆模式。"},
     {"name": "/help", "usage": "/help", "description": "查看所有可用命令。"},
     {"name": "/tools", "usage": "/tools", "description": "查看 Agent 可用工具和本地快捷命令。"},
     {"name": "/status", "usage": "/status", "description": "查看当前模型、供应商、API Key 状态和配置来源。"},
@@ -262,6 +273,22 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
     context = context or {}
     if input_text in {"/", "/help"}:
         return format_slash_commands()
+    if input_text in {"/memory on", "/memory off"} or input_text.startswith("/memory mode "):
+        if input_text == "/memory on":
+            mode = "suggest"
+        elif input_text == "/memory off":
+            mode = "off"
+        else:
+            mode = input_text[len("/memory mode ") :].strip()
+        if mode not in {"off", "read_only", "suggest", "auto"}:
+            return "usage: /memory mode <off|read_only|suggest|auto>"
+        await save_tinycoder_settings({"memory": {"mode": mode}})
+        service = context.get("memory")
+        if service is not None:
+            service.set_mode(mode)
+        return f"memory mode={mode}; saved to {TINYCODER_SETTINGS_PATH}"
+    if input_text == "/memory" or input_text.startswith("/memory "):
+        return handle_memory_command(input_text, context.get("memory"))
     if input_text == "/config-paths":
         return "\n".join([f"tinycoder settings: {TINYCODER_SETTINGS_PATH}", f"tinycoder permissions: {TINYCODER_PERMISSIONS_PATH}", f"tinycoder mcp: {TINYCODER_MCP_PATH}", f"compat fallback: {CLAUDE_SETTINGS_PATH}"])
     if input_text == "/permissions":

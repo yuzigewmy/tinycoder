@@ -9,6 +9,7 @@ from .compact.auto_compact import auto_compact
 from .compact.context_collapse import apply_context_collapse_if_needed, create_context_collapse_state
 from .compact.microcompact import microcompact
 from .compact.snip_compact import snip_compact_conversation
+from .memory.context import inject_context_message, inject_memory_context
 from .tool import ToolRegistry
 from .turn_controller import (
     GuardDecision,
@@ -102,6 +103,15 @@ async def _maybe_call(callback: Any, *args: Any) -> None:
         await result
 
 
+async def _maybe_call_value(callback: Any, *args: Any) -> Any:
+    if callback is None:
+        return None
+    result = callback(*args)
+    if hasattr(result, "__await__"):
+        return await result
+    return result
+
+
 async def run_agent_turn(args: dict[str, Any]) -> list[dict[str, Any]]:
     model_name = args.get("modelName") or ""
     message_sink: list[dict[str, Any]] = args["messages"]
@@ -114,6 +124,9 @@ async def run_agent_turn(args: dict[str, Any]) -> list[dict[str, Any]]:
     snipped_this_turn = False
     content_replacement_state = args.get("contentReplacementState") or create_content_replacement_state()
     context_collapse_state = args.get("contextCollapseState") or create_context_collapse_state()
+    instruction_context = str(args.get("instructionContext") or "")
+    memory_context = ""
+    memory_context_loaded = False
 
     def commit_messages(next_messages: list[dict[str, Any]]) -> None:
         nonlocal messages
@@ -149,7 +162,12 @@ async def run_agent_turn(args: dict[str, Any]) -> list[dict[str, Any]]:
         if decision.action == "recover" and decision.reason:
             commit_messages([
                 *messages,
-                {"role": "user", "content": format_recovery_prompt(decision.reason)},
+                {
+                    "role": "user",
+                    "content": format_recovery_prompt(decision.reason),
+                    "synthetic": True,
+                    "contextKind": "agent_recovery",
+                },
             ])
             await checkpoint()
         return None
@@ -164,7 +182,17 @@ async def run_agent_turn(args: dict[str, Any]) -> list[dict[str, Any]]:
             target["consecutiveFailures"] = int(next_state.get("consecutiveFailures", 0))
 
     def push_continuation_prompt(content: str) -> None:
-        commit_messages([*messages, {"role": "user", "content": content}])
+        commit_messages(
+            [
+                *messages,
+                {
+                    "role": "user",
+                    "content": content,
+                    "synthetic": True,
+                    "contextKind": "agent_recovery",
+                },
+            ]
+        )
 
     def append_thinking_blocks(blocks: list[dict[str, Any]] | None) -> None:
         if blocks:
@@ -216,6 +244,29 @@ async def run_agent_turn(args: dict[str, Any]) -> list[dict[str, Any]]:
                     await _maybe_call(args.get("onAutoCompact"), result)
                     latest_stats = compute_context_stats(messages, model_name)
                     await _maybe_call(args.get("onContextStats"), latest_stats)
+
+        if not memory_context_loaded:
+            memory_context_loaded = True
+            try:
+                memory_context = str(
+                    await _maybe_call_value(
+                        args.get("memoryContextProvider"),
+                        list(model_messages),
+                    )
+                    or ""
+                )
+            except Exception as error:
+                memory_context = ""
+                await _maybe_call(args.get("onMemoryError"), error)
+        model_messages = inject_context_message(
+            model_messages,
+            instruction_context,
+            context_kind="instructions",
+        )
+        model_messages = inject_memory_context(model_messages, memory_context)
+        if model_name and (instruction_context or memory_context):
+            latest_stats = compute_context_stats(model_messages, model_name)
+            await _maybe_call(args.get("onContextStats"), latest_stats)
 
         model_obj = args["model"]
         stream_next = getattr(model_obj, "stream_next", None)

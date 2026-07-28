@@ -9,12 +9,18 @@ from typing import Any
 from .agent_loop import run_agent_turn
 from .cli_commands import complete_slash_command, find_matching_slash_commands, try_handle_local_command
 from .compact.context_collapse import apply_context_collapse_if_needed, create_context_collapse_state
-from .config import load_runtime_config
+from .config import load_effective_settings, load_runtime_config
 from .manage_cli import maybe_handle_management_command
 from .mcp_status import summarize_mcp_servers
+from .memory.runtime import (
+    active_paths_from_messages,
+    capture_memory_turn,
+    create_memory_context_provider,
+    create_memory_service,
+)
 from .model_router import ModelRouter
 from .permissions import PermissionManager
-from .prompt import build_system_prompt
+from .prompt import build_instruction_context, build_system_prompt
 from .session import fork_session
 from .tools.index import create_default_tool_registry, hydrate_mcp_tools
 from .tty_app import run_tty_app
@@ -84,6 +90,11 @@ async def main(argv: list[str] | None = None) -> None:
     permissions = PermissionManager(cwd)
     await permissions.when_ready()
     model = ModelRouter(tools, load_runtime_config)
+    memory = None
+    try:
+        memory = create_memory_service(cwd, await load_effective_settings())
+    except Exception:
+        memory = None
     messages: list[dict[str, Any]] = [{"role": "system", "content": await build_system_prompt(cwd, permissions.get_summary(), {"skills": tools.get_skills(), "mcpServers": tools.get_mcp_servers()})}]
     content_replacement_state = create_content_replacement_state()
     context_collapse_state = create_context_collapse_state()
@@ -115,9 +126,11 @@ async def main(argv: list[str] | None = None) -> None:
                 "alreadySavedCount": 0,
                 "resumeTarget": resolved_resume,
                 "getRuntimeConfig": load_runtime_config,
+                "memory": memory,
             })
             return
 
+        session_id = str(uuid.uuid4())[:8]
         mcp_status = summarize_mcp_servers(tools.get_mcp_servers())
         print(render_banner(runtime or {"model": "mock"}, cwd))
         print("")
@@ -141,7 +154,10 @@ async def main(argv: list[str] | None = None) -> None:
                     saved = sum(max(0, span.get("tokensBefore", 0) - span.get("tokensAfter", 0)) for span in result.get("spans") or [])
                     print(f"\nContext collapse projected {len(result.get('spans') or [])} span(s) into summaries, saving ~{round(saved)} tokens. Original transcript is preserved.\n")
                     continue
-                local_command_result = await try_handle_local_command(input_text, {"tools": tools})
+                local_command_result = await try_handle_local_command(
+                    input_text,
+                    {"tools": tools, "memory": memory},
+                )
                 if local_command_result is not None:
                     print(f"\n{local_command_result}\n")
                     continue
@@ -158,7 +174,14 @@ async def main(argv: list[str] | None = None) -> None:
                 runtime = await load_runtime_config()
             except Exception:
                 runtime = None
-            messages.append({"role": "user", "content": input_text})
+            user_event_id = str(uuid.uuid4())
+            messages.append(
+                {
+                    "role": "user",
+                    "content": input_text,
+                    "eventId": user_event_id,
+                }
+            )
             permissions.begin_turn()
             try:
                 messages[:] = await run_agent_turn({
@@ -168,6 +191,16 @@ async def main(argv: list[str] | None = None) -> None:
                     "cwd": cwd,
                     "permissions": permissions,
                     "modelName": (runtime or {}).get("model") or "",
+                    "instructionContext": await build_instruction_context(
+                        cwd,
+                        {
+                            "activePaths": active_paths_from_messages(messages),
+                        },
+                    ),
+                    "memoryContextProvider": create_memory_context_provider(
+                        memory,
+                        session_id=session_id,
+                    ),
                     "contentReplacementState": content_replacement_state,
                     "contextCollapseState": context_collapse_state,
                 })
@@ -175,10 +208,18 @@ async def main(argv: list[str] | None = None) -> None:
                 messages.append({"role": "assistant", "content": analyze_error(error)})
             finally:
                 permissions.end_turn()
+            capture_memory_turn(
+                memory,
+                messages,
+                session_id=session_id,
+                event_id=user_event_id,
+            )
             last = next((m for m in reversed(messages) if m.get("role") == "assistant"), None)
             if last:
                 print(f"\n{render_markdownish(str(last.get('content') or ''))}\n")
     finally:
+        if memory is not None:
+            memory.close()
         await tools.dispose()
 
 

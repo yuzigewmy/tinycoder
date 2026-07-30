@@ -1,26 +1,11 @@
 from __future__ import annotations
 
-import re
 import shutil
 from typing import Any
 
-from .chrome import char_display_width, wrap_panel_body_line
+from .chrome import char_display_width, get_work_area_width, string_display_width, wrap_panel_body_line
 from .markdown import render_markdownish
-
-RESET = "\u001b[0m"
-DIM = "\u001b[2m"
-CYAN = "\u001b[36m"
-GREEN = "\u001b[32m"
-YELLOW = "\u001b[33m"
-RED = "\u001b[31m"
-MAGENTA = "\u001b[35m"
-BOLD = "\u001b[1m"
-BLUE = "\u001b[34m"
-REVERSE = "\u001b[7m"
-
-
-def strip_ansi(value: str) -> str:
-    return re.sub(r"\u001b\[[\d;]*[A-Za-z]", "", value)
+from .theme import ACCENT, BOLD, DANGER, DIM, MUTED, PRIMARY, PRIMARY_SOFT, RAIL, RESET, REVERSE, SUCCESS, TOOL, color_enabled, paint, strip_ansi
 
 
 def slice_by_display_columns(input_text: str, start_col: int, end_col: int | float) -> str:
@@ -41,6 +26,8 @@ def slice_by_display_columns(input_text: str, start_col: int, end_col: int | flo
 
 def highlight_range(line: str, start_col: int, end_col: int | float) -> str:
     if start_col >= end_col:
+        return line
+    if not color_enabled():
         return line
     result = ""; visible_col = 0; i = 0; highlighted = False
     while i < len(line):
@@ -85,34 +72,55 @@ def preview_tool_body(tool_name: str, body: str) -> str:
     limited_lines = lines[:max_lines]
     limited = "\n".join(limited_lines)
     if len(limited) > max_chars:
-        limited = limited[:max_chars] + "..."
+        limited = limited[:max_chars] + "…"
     if limited != body:
-        return f"{limited}\n{DIM}... output truncated in transcript{RESET}"
+        return f"{limited}\n{paint('… output truncated in transcript', MUTED, DIM)}"
     return limited
+
+
+def _render_track_block(label: str, body: str, color: str, *, meta: str = "") -> str:
+    suffix = f"  {paint(meta, MUTED, DIM)}" if meta else ""
+    source_lines = render_markdownish(body).split("\n") if body else [""]
+    lines: list[str] = []
+    for source_line in source_lines:
+        # Reserve five columns for the timeline rail and repeat it on every
+        # wrapped continuation instead of letting text fall out of the frame.
+        lines.extend(wrap_panel_body_line(source_line, max(8, get_work_area_width() - 1)))
+    return "\n".join(
+        [
+            f"{paint('  ╭─', RAIL)} {paint(label, color, BOLD)}{suffix}",
+            *[f"{paint('  │', RAIL)}  {line}" if line else paint("  │", RAIL) for line in lines],
+            paint("  ╰─", RAIL),
+        ]
+    )
 
 
 def render_transcript_entry(entry: dict[str, Any]) -> str:
     kind = entry.get("kind")
     if kind == "user":
-        return f"{CYAN}{BOLD}you{RESET}\n{indent_block(str(entry.get('body') or ''))}"
+        return _render_track_block("you", str(entry.get("body") or ""), PRIMARY_SOFT)
     if kind == "assistant":
-        return f"{GREEN}{BOLD}assistant{RESET}\n{indent_block(render_markdownish(str(entry.get('body') or '')))}"
+        return _render_track_block("tinycoder", str(entry.get("body") or ""), PRIMARY)
     if kind == "progress":
-        return f"{YELLOW}{BOLD}progress{RESET}\n{indent_block(render_markdownish(str(entry.get('body') or '')))}"
-    status = f"{YELLOW}running{RESET}" if entry.get("status") == "running" else f"{GREEN}ok{RESET}" if entry.get("status") == "success" else f"{RED}err{RESET}"
+        return _render_track_block("思考", str(entry.get("body") or ""), ACCENT)
+    status_name = str(entry.get("status") or "error")
+    status = "运行中" if status_name == "running" else "完成" if status_name == "success" else "失败"
+    status_color = ACCENT if status_name == "running" else SUCCESS if status_name == "success" else DANGER
     if entry.get("status") == "running":
         body = str(entry.get("body") or "")
     elif entry.get("collapsed"):
-        body = f"{DIM}{entry.get('collapsedSummary') or 'output collapsed'}{RESET}"
+        body = str(entry.get("collapsedSummary") or "output collapsed")
     elif entry.get("collapsePhase"):
-        body = f"{DIM}collapsing{'.' * int(entry.get('collapsePhase'))}{RESET}"
+        body = f"collapsing{'.' * int(entry.get('collapsePhase'))}"
     else:
         body = preview_tool_body(str(entry.get("toolName") or "unknown"), render_markdownish(str(entry.get("body") or "")))
-    return f"{MAGENTA}{BOLD}tool{RESET} {entry.get('toolName') or 'unknown'} {status}\n{indent_block(body)}"
+    glyph = "◆" if status_name == "running" else "✓" if status_name == "success" else "×"
+    label = f"{glyph} 工具 · {entry.get('toolName') or 'unknown'}"
+    return _render_track_block(label, body, TOOL, meta=paint(status, status_color, BOLD))
 
 
 def get_transcript_panel_width() -> int:
-    return max(60, shutil.get_terminal_size((100, 40)).columns)
+    return get_work_area_width()
 
 
 def get_transcript_window_size(window_size: int | None = None) -> int:
@@ -123,16 +131,15 @@ def get_transcript_window_size(window_size: int | None = None) -> int:
 
 def render_transcript_lines(entries: list[dict[str, Any]]) -> list[str]:
     rendered = [render_transcript_entry(entry) for entry in entries]
-    separator = f"{BLUE}{DIM}·{RESET}"
     logical: list[str] = []
     for index, block in enumerate(rendered):
         if index > 0:
-            logical.extend(["", separator, ""])
+            logical.append("")
         logical.extend(block.split("\n"))
     width = get_transcript_panel_width()
     lines: list[str] = []
     for line in logical:
-        lines.extend(wrap_panel_body_line(line, width))
+        lines.extend(wrap_panel_body_line(line, width) if string_display_width(line) > width else [line])
     return lines
 
 

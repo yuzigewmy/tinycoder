@@ -23,7 +23,9 @@ from .permissions import PermissionManager
 from .prompt import build_instruction_context, build_system_prompt
 from .session import append_compact_boundary, append_context_collapse_span, append_snip_boundary, clear_session, fork_session, list_sessions, load_context_collapse_state, load_session, load_transcript, rename_session, save_session
 from .tui.markdown import MarkdownStreamPrinter, is_markdown_path, render_markdownish
-from .ui import clear_screen, render_banner, render_permission_prompt, render_transcript_lines
+from .tui.input import render_inline_prompt
+from .tui.theme import BOLD, DIM, INK, MUTED, PRIMARY, REVERSE, paint
+from .ui import clear_screen, render_activity, render_banner, render_footer_bar, render_panel, render_permission_prompt, render_response, render_transcript_lines
 from .utils.token_estimator import compute_context_stats
 
 
@@ -59,7 +61,7 @@ def _last_assistant_content(messages: list[dict[str, Any]]) -> str | None:
 
 
 def _render_assistant_output(content: Any) -> str:
-    return render_markdownish(str(content or ""))
+    return render_response(render_markdownish(str(content or "")))
 
 
 def _render_shortcut_output(shortcut: dict[str, Any], output: Any) -> str:
@@ -82,7 +84,7 @@ def _single_line_preview(value: Any, limit: int = MAX_STATUS_PREVIEW) -> str:
 
 def _render_progress_node(content: Any) -> str:
     preview = _single_line_preview(content)
-    return f"[thinking] {preview}" if preview else "[thinking] working..."
+    return render_activity("thinking", preview or "working…")
 
 
 def _hide_progress_node(content: Any) -> None:
@@ -153,15 +155,12 @@ class AssistantStreamFilter:
 
 def _render_tool_start(name: Any, input_value: Any) -> None:
     preview = _single_line_preview(input_value)
-    suffix = f" {preview}" if preview else ""
-    print(f"[tool] {name}{suffix}")
+    print(render_activity("tool", str(name), preview, status="running"))
 
 
 def _render_tool_result(name: Any, output: Any, is_error: bool) -> None:
-    status = "err" if is_error else "ok"
     preview = _single_line_preview(output)
-    suffix = f" - {preview}" if preview else ""
-    print(f"[tool:{name} {status}]{suffix}")
+    print(render_activity("tool", str(name), preview, status="error" if is_error else "success"))
 
 
 def _analyze_error(error: BaseException) -> str:
@@ -190,12 +189,10 @@ def _analyze_error(error: BaseException) -> str:
 
 SENSITIVE_MODEL_COMMANDS = ("/apikey ", "/use ")
 MODEL_CONFIG_COMMANDS = ("/provider ", "/model ", "/apikey ", "/base-url ", "/use ")
-PROMPT_RED = "\033[31m"
-PROMPT_RESET = "\033[0m"
-PROMPT_TEXT = "tinycoder> "
-COLORED_PROMPT = f"{PROMPT_RED}{PROMPT_TEXT}{PROMPT_RESET}"
+PROMPT_TEXT = "tinycoder › "
+COLORED_PROMPT = render_inline_prompt()
 INTERRUPTED_MESSAGE = "已中断当前模型输出。"
-START_PAGE_HELP = "输入 /help 查看中文命令说明，输入 /exit 退出。"
+START_PAGE_HELP = render_footer_bar("输入任务 · /help 命令 · /resume 会话")
 
 
 def _is_sensitive_model_command(input_text: str) -> bool:
@@ -364,16 +361,19 @@ def _read_interactive_line_posix(prompt: str, history_entries: list[str]) -> str
 
 
 def _format_session_option(meta: dict[str, Any], selected: bool) -> str:
-    marker = ">" if selected else " "
+    marker = paint("›", PRIMARY, BOLD) if selected else " "
     title = str(meta.get("title") or "(untitled)")
-    return f"{marker} {meta.get('id')}  {title}  messages={meta.get('messageCount')}"
+    session_id = paint(meta.get("id"), INK, BOLD if selected else DIM)
+    title_text = paint(title, INK if selected else MUTED)
+    count = paint(f"{meta.get('messageCount')} 条消息", MUTED, DIM)
+    line = f"{marker} {session_id}  {title_text}  {count}"
+    return paint(line, REVERSE) if selected else line
 
 
 def _render_session_picker(sessions: list[dict[str, Any]], index: int) -> None:
     print("\033[2J\033[H", end="")
-    print("Select a session with Up/Down, Enter to resume, Esc/Ctrl+C to cancel.\n")
-    for i, meta in enumerate(sessions):
-        print(_format_session_option(meta, i == index))
+    body = "\n".join(_format_session_option(meta, i == index) for i, meta in enumerate(sessions))
+    print(render_panel("恢复会话", body, {"bottomTitle": "↑↓ 选择 · Enter 恢复 · Esc 取消"}))
 
 
 def _pick_session_windows(sessions: list[dict[str, Any]]) -> str | None:
@@ -528,7 +528,7 @@ def _render_session_workspace(
         sections.extend(
             [
                 "",
-                f"[session {session_id}]",
+                render_footer_bar(f"已恢复会话 · {session_id}"),
                 "",
                 _render_view_entries(entries),
             ]
@@ -742,7 +742,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                 },
             )
             permissions.begin_turn()
-            stream_printer = MarkdownStreamPrinter()
+            stream_printer = MarkdownStreamPrinter(framed=True)
             stream_filter = AssistantStreamFilter(stream_printer)
             interrupted = False
             try:

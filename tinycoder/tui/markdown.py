@@ -5,13 +5,7 @@ import re
 import shutil
 import sys
 
-RESET = "\u001b[0m"
-DIM = "\u001b[2m"
-CYAN = "\u001b[36m"
-YELLOW = "\u001b[33m"
-MAGENTA = "\u001b[35m"
-BOLD = "\u001b[1m"
-ITALIC = "\u001b[3m"
+from .theme import ACCENT, BOLD, DIM, ITALIC, MUTED, PRIMARY, RAIL, TOOL, color_enabled, paint
 
 MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdown", ".mkd", ".mdx"}
 
@@ -37,13 +31,11 @@ def _color_enabled(color: bool | None) -> bool:
         return False
     if value in {"1", "true", "on", "yes", "ansi"}:
         return True
-    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+    return color_enabled(sys.stdout)
 
 
 def _style(text: str, *codes: str, color: bool) -> str:
-    if not color or not text:
-        return text
-    return "".join(codes) + text + RESET
+    return paint(text, *codes, color=color)
 
 
 def _terminal_width(default: int = 100) -> int:
@@ -94,7 +86,7 @@ def _render_inline(text: str, *, color: bool) -> str:
         text,
     )
     # Inline code before emphasis, so asterisks inside code are preserved.
-    text = re.sub(r"`([^`]+)`", lambda m: _style(m.group(1), MAGENTA, color=color), text)
+    text = re.sub(r"`([^`]+)`", lambda m: _style(m.group(1), TOOL, color=color), text)
     text = re.sub(r"\*\*([^*]+)\*\*", lambda m: _style(m.group(1), BOLD, color=color), text)
     text = re.sub(r"__([^_]+)__", lambda m: _style(m.group(1), BOLD, color=color), text)
     text = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", lambda m: _style(m.group(1), ITALIC, color=color), text)
@@ -138,16 +130,22 @@ def render_markdownish(input_text: str, *, color: bool | None = None) -> str:
             if not in_code:
                 in_code = True
                 code_language = stripped[3:].strip()
-                if code_language:
-                    rendered.append(_style(f"code: {code_language}", DIM, color=use_color))
+                label = f"code · {code_language}" if code_language else "code"
+                rendered.append(
+                    f"{_style('╭─', RAIL, color=use_color)} "
+                    f"{_style(label, MUTED, DIM, color=use_color)}"
+                )
             else:
                 in_code = False
                 code_language = ""
+                rendered.append(_style("╰─", RAIL, color=use_color))
             continue
 
         if in_code:
-            # Preserve code exactly except for a small visual indent.
-            rendered.append(_style("  " + line, DIM, color=use_color))
+            rendered.append(
+                f"{_style('│', RAIL, color=use_color)}  "
+                f"{_style(line, MUTED, color=use_color)}"
+            )
             continue
 
         if _is_table_row(line) or _is_table_separator(line):
@@ -160,39 +158,42 @@ def render_markdownish(input_text: str, *, color: bool | None = None) -> str:
             continue
 
         if re.match(r"^\s*(-{3,}|\*{3,}|_{3,})\s*$", line):
-            rendered.append(_style("─" * min(72, _terminal_width()), DIM, color=use_color))
+            rendered.append(_style("─" * min(72, _terminal_width()), RAIL, color=use_color))
             continue
 
         heading = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line)
         if heading:
             level = len(heading.group(1))
             prefix = "" if level <= 2 else "· "
-            rendered.append(_style(prefix + _render_inline(heading.group(2), color=use_color), CYAN, BOLD, color=use_color))
+            rendered.append(_style(prefix + _render_inline(heading.group(2), color=use_color), PRIMARY, BOLD, color=use_color))
             continue
 
         quote = re.match(r"^\s*>\s?(.*)$", line)
         if quote:
-            rendered.append(_style("│ " + _render_inline(quote.group(1), color=use_color), DIM, color=use_color))
+            rendered.append(
+                f"{_style('│', ACCENT, color=use_color)} "
+                f"{_style(_render_inline(quote.group(1), color=use_color), MUTED, color=use_color)}"
+            )
             continue
 
         task = re.match(r"^(\s*)[-*+]\s+\[([ xX])\]\s+(.+)$", line)
         if task:
             indent = task.group(1)
             checked = "✓" if task.group(2).lower() == "x" else " "
-            rendered.append(f"{indent}{_style('[' + checked + ']', YELLOW, color=use_color)} {_render_inline(task.group(3), color=use_color)}")
+            rendered.append(f"{indent}{_style('[' + checked + ']', ACCENT, color=use_color)} {_render_inline(task.group(3), color=use_color)}")
             continue
 
         unordered = re.match(r"^(\s*)[-*+]\s+(.+)$", line)
         if unordered:
             indent = unordered.group(1)
-            rendered.append(f"{indent}{_style('•', YELLOW, color=use_color)} {_render_inline(unordered.group(2), color=use_color)}")
+            rendered.append(f"{indent}{_style('•', ACCENT, color=use_color)} {_render_inline(unordered.group(2), color=use_color)}")
             continue
 
         ordered = re.match(r"^(\s*)\d+[.)]\s+(.+)$", line)
         if ordered:
             indent = ordered.group(1)
             number = re.match(r"^\s*(\d+)", line).group(1)  # type: ignore[union-attr]
-            rendered.append(f"{indent}{_style(number + '.', YELLOW, color=use_color)} {_render_inline(ordered.group(2), color=use_color)}")
+            rendered.append(f"{indent}{_style(number + '.', ACCENT, color=use_color)} {_render_inline(ordered.group(2), color=use_color)}")
             continue
 
         rendered.append(_render_inline(line, color=use_color))
@@ -216,32 +217,56 @@ class MarkdownStreamPrinter:
     partial line when finish() is called.
     """
 
-    def __init__(self, *, prefix_newline: bool = True, suffix_newline: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        prefix_newline: bool = True,
+        suffix_newline: bool = True,
+        framed: bool = False,
+        label: str = "tinycoder",
+    ) -> None:
         self._buffer = ""
         self._started = False
         self._prefix_newline = prefix_newline
         self._suffix_newline = suffix_newline
+        self._framed = framed
+        self._label = label
+
+    def _begin(self) -> None:
+        if self._started:
+            return
+        if self._prefix_newline:
+            print("")
+        if self._framed:
+            print(f"{paint('  ╭─', RAIL)} {paint(self._label, PRIMARY, BOLD)}")
+        self._started = True
+
+    def _print_line(self, line: str) -> None:
+        rendered = render_markdownish(line)
+        if not self._framed:
+            print(rendered, flush=True)
+            return
+        for rendered_line in rendered.split("\n"):
+            rail = paint("  │", RAIL)
+            print(f"{rail}  {rendered_line}" if rendered_line else rail, flush=True)
 
     def write(self, delta: str) -> None:
         if not delta:
             return
-        if not self._started:
-            if self._prefix_newline:
-                print("")
-            self._started = True
+        self._begin()
         self._buffer += str(delta).replace("\r\n", "\n").replace("\r", "\n")
         parts = self._buffer.split("\n")
         self._buffer = parts.pop()
         for line in parts:
-            print(render_markdownish(line), flush=True)
+            self._print_line(line)
 
     def finish(self) -> None:
         if self._buffer:
-            if not self._started and self._prefix_newline:
-                print("")
-                self._started = True
-            print(render_markdownish(self._buffer), flush=True)
+            self._begin()
+            self._print_line(self._buffer)
             self._buffer = ""
+        if self._started and self._framed:
+            print(paint("  ╰─", RAIL), flush=True)
         if self._started and self._suffix_newline:
             print("")
 

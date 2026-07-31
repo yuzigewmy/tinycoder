@@ -459,7 +459,10 @@ class PermissionToolIntegrationTests(unittest.IsolatedAsyncioTestCase):
             str(self.workspace),
         )
 
-        self.assertIn("当前权限: 替我审批 (auto_approve)", rendered)
+        self.assertIn("MODE", rendered)
+        self.assertIn("替我审批", rendered)
+        self.assertIn("MODEL", rendered)
+        self.assertIn("deepseek-v4", rendered)
 
 
 if __name__ == "__main__":

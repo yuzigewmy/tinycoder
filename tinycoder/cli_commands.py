@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from .config import (
@@ -10,6 +9,7 @@ from .config import (
     TINYCODER_SETTINGS_PATH,
     load_effective_settings,
     load_runtime_config,
+    load_tinycoder_settings,
     save_tinycoder_settings,
 )
 from .memory.commands import handle_memory_command
@@ -145,14 +145,13 @@ def normalize_provider(provider: str | None) -> str:
     return normalized or key
 
 
-async def _effective_env() -> dict[str, str]:
-    effective = await load_effective_settings()
-    configured_env = {str(k): str(v) for k, v in (effective.get("env") or {}).items()}
-    return {**configured_env, **os.environ}
+async def _tinycoder_env() -> dict[str, str]:
+    settings = await load_tinycoder_settings()
+    return {str(k): str(v) for k, v in (settings.get("env") or {}).items()}
 
 
 async def _current_provider() -> str:
-    env = await _effective_env()
+    env = await _tinycoder_env()
     return normalize_provider(env.get("TINYCODER_MODEL_PROVIDER") or env.get("MODEL_PROVIDER") or "anthropic")
 
 
@@ -172,32 +171,27 @@ def _provider_info(provider: str) -> dict[str, str]:
     }
 
 
-def _set_process_model_env(provider: str, *, model: str | None = None, api_key: str | None = None, base_url: str | None = None) -> dict[str, str]:
+def _build_model_env_updates(provider: str, *, model: str | None = None, api_key: str | None = None, base_url: str | None = None) -> dict[str, str]:
     provider = normalize_provider(provider)
     info = _provider_info(provider)
     updates: dict[str, str] = {"TINYCODER_MODEL_PROVIDER": provider}
-    os.environ["TINYCODER_MODEL_PROVIDER"] = provider
 
     if model:
         updates["TINYCODER_MODEL"] = model
         updates[info["model_env"]] = model
-        os.environ["TINYCODER_MODEL"] = model
-        os.environ[info["model_env"]] = model
 
     if api_key:
         updates[info["api_key_env"]] = api_key
-        os.environ[info["api_key_env"]] = api_key
 
     if base_url:
         cleaned = base_url.rstrip("/")
         updates[info["base_url_env"]] = cleaned
-        os.environ[info["base_url_env"]] = cleaned
 
     return updates
 
 
 async def _persist_model_env(provider: str, *, model: str | None = None, api_key: str | None = None, base_url: str | None = None) -> None:
-    env_updates = _set_process_model_env(provider, model=model, api_key=api_key, base_url=base_url)
+    env_updates = _build_model_env_updates(provider, model=model, api_key=api_key, base_url=base_url)
     settings: dict[str, Any] = {"env": env_updates}
     if model:
         settings["model"] = model
@@ -208,44 +202,44 @@ async def _persist_custom_provider(provider: str, *, model: str, api_key: str, b
     provider = normalize_provider(provider)
     if not provider or provider in RESERVED_PROVIDER_NAMES:
         raise RuntimeError("自定义供应商名称不能为空，也不能使用内置供应商名称或别名。")
-    effective = await load_effective_settings()
-    custom = dict(effective.get("customProviders") or {})
+    settings = await load_tinycoder_settings()
+    custom = dict(settings.get("customProviders") or {})
     custom[provider] = {
         "type": "openai",
         "model": model,
         "apiKey": api_key,
         "baseUrl": base_url.rstrip("/"),
     }
-    env_updates = _set_process_model_env(provider, model=model, api_key=api_key, base_url=base_url)
+    env_updates = _build_model_env_updates(provider, model=model, api_key=api_key, base_url=base_url)
     await save_tinycoder_settings({"customProviders": custom, "env": env_updates, "model": model})
 
 
 async def _default_model_for(provider: str) -> str:
     provider = normalize_provider(provider)
-    env = await _effective_env()
+    env = await _tinycoder_env()
     info = _provider_info(provider)
     if provider in SUPPORTED_MODEL_PROVIDERS:
         return (env.get(info["model_env"]) or info["default_model"]).strip()
-    effective = await load_effective_settings()
-    custom = (effective.get("customProviders") or {}).get(provider) or {}
+    settings = await load_tinycoder_settings()
+    custom = (settings.get("customProviders") or {}).get(provider) or {}
     return (env.get(info["model_env"]) or str(custom.get("model") or "")).strip()
 
 
 async def _default_base_url_for(provider: str) -> str:
     provider = normalize_provider(provider)
-    env = await _effective_env()
+    env = await _tinycoder_env()
     info = _provider_info(provider)
     if provider in SUPPORTED_MODEL_PROVIDERS:
         return (env.get(info["base_url_env"]) or info["default_base_url"]).strip().rstrip("/")
-    effective = await load_effective_settings()
-    custom = (effective.get("customProviders") or {}).get(provider) or {}
+    settings = await load_tinycoder_settings()
+    custom = (settings.get("customProviders") or {}).get(provider) or {}
     return (env.get(info["base_url_env"]) or str(custom.get("baseUrl") or "")).strip().rstrip("/")
 
 
 async def _format_status(permission_manager: Any = None) -> str:
     provider = await _current_provider()
     info = _provider_info(provider)
-    env = await _effective_env()
+    env = await _tinycoder_env()
     permission_line = (
         f"permission: {permission_mode_label(permission_manager.mode)} "
         f"({permission_manager.mode})"
@@ -262,7 +256,8 @@ async def _format_status(permission_manager: Any = None) -> str:
         auth_token = str(runtime.get("authToken") or "")
         auth_line = f"{info['auth_token_env']}: {mask_secret(auth_token)}" if auth_token else f"{info['api_key_env']}: {mask_secret(api_key)}"
         source = str(runtime.get("sourceSummary") or "")
-        mcp_count = len(runtime.get("mcpServers") or {})
+        effective = await load_effective_settings()
+        mcp_count = len(effective.get("mcpServers") or {})
         lines = [
             f"provider: {provider} ({info['label']})",
             f"model: {model}",
@@ -311,7 +306,7 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
     if input_text == "/memory" or input_text.startswith("/memory "):
         return handle_memory_command(input_text, context.get("memory"))
     if input_text == "/config-paths":
-        return "\n".join([f"tinycoder settings: {TINYCODER_SETTINGS_PATH}", f"tinycoder permissions: {TINYCODER_PERMISSIONS_PATH}", f"tinycoder mcp: {TINYCODER_MCP_PATH}", f"compat fallback: {CLAUDE_SETTINGS_PATH}"])
+        return "\n".join([f"tinycoder settings: {TINYCODER_SETTINGS_PATH}", f"tinycoder permissions: {TINYCODER_PERMISSIONS_PATH}", f"tinycoder mcp: {TINYCODER_MCP_PATH}", f"compat settings (not used for model runtime): {CLAUDE_SETTINGS_PATH}"])
     if input_text == "/permissions":
         manager = context.get("permissions")
         if manager is None:
@@ -359,9 +354,9 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
             f"已保存到 {manager.store_path}"
         )
     if input_text == "/providers":
-        effective = await load_effective_settings()
+        settings = await load_tinycoder_settings()
         lines = [f"{key}  {value['label']}  default={value['default_model']}" for key, value in SUPPORTED_MODEL_PROVIDERS.items()]
-        custom = effective.get("customProviders") or {}
+        custom = settings.get("customProviders") or {}
         for key, value in custom.items():
             if isinstance(value, dict):
                 lines.append(f"{key}  Custom OpenAI-compatible  default={value.get('model') or ''}  baseUrl={value.get('baseUrl') or ''}")
@@ -404,7 +399,7 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
     if input_text == "/apikey":
         provider = await _current_provider()
         info = _provider_info(provider)
-        env = await _effective_env()
+        env = await _tinycoder_env()
         try:
             runtime = await load_runtime_config()
             key = str(runtime.get("apiKey") or "")

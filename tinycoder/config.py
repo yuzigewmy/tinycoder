@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 
 class McpServerConfig(TypedDict, total=False):
@@ -79,6 +79,11 @@ async def read_settings_file(file_path: str | Path) -> TinyCoderSettings:
     return parsed if isinstance(parsed, dict) else {}
 
 
+async def load_tinycoder_settings() -> TinyCoderSettings:
+    """Load TinyCoder's authoritative user settings without compatibility fallbacks."""
+    return await read_settings_file(TINYCODER_SETTINGS_PATH)
+
+
 async def read_mcp_config_file(file_path: str | Path) -> dict[str, McpServerConfig]:
     parsed = _read_json_file(Path(file_path), {})
     if not isinstance(parsed, dict):
@@ -128,7 +133,7 @@ async def load_effective_settings() -> TinyCoderSettings:
     claude = await read_settings_file(CLAUDE_SETTINGS_PATH)
     global_mcp = await read_mcp_config_file(TINYCODER_MCP_PATH)
     project_mcp = await read_mcp_config_file(PROJECT_MCP_PATH)
-    mini = await read_settings_file(TINYCODER_SETTINGS_PATH)
+    mini = await load_tinycoder_settings()
     return merge_settings(
         merge_settings(
             merge_settings(claude, {"mcpServers": global_mcp}),
@@ -146,22 +151,24 @@ async def save_tinycoder_settings(updates: TinyCoderSettings) -> None:
 
 
 async def load_runtime_config() -> RuntimeConfig:
-    effective = await load_effective_settings()
-    env = {**{str(k): str(v) for k, v in (effective.get("env") or {}).items()}, **os.environ}
+    settings = await load_tinycoder_settings()
+    # Model routing must have one durable source of truth. Process, user, and
+    # machine environment variables must never override an explicit CLI switch.
+    env = {str(k): str(v) for k, v in (settings.get("env") or {}).items()}
     provider = (
         env.get("TINYCODER_MODEL_PROVIDER")
         or env.get("MODEL_PROVIDER")
         or "anthropic"
     ).strip().lower()
 
-    custom_providers = effective.get("customProviders") or {}
+    custom_providers = settings.get("customProviders") or {}
     custom_provider = custom_providers.get(provider) if isinstance(custom_providers, dict) else None
 
     if provider in {"qwen", "dashscope", "aliyun"}:
         provider_type = "openai"
         model = (
-            os.environ.get("TINYCODER_MODEL")
-            or effective.get("model")
+            settings.get("model")
+            or env.get("TINYCODER_MODEL")
             or env.get("DASHSCOPE_MODEL")
             or env.get("QWEN_MODEL")
             or "qwen-plus"
@@ -175,7 +182,7 @@ async def load_runtime_config() -> RuntimeConfig:
         api_key = (env.get("DASHSCOPE_API_KEY") or env.get("QWEN_API_KEY") or "").strip()
     elif provider == "anthropic":
         provider_type = "anthropic"
-        model = (os.environ.get("TINYCODER_MODEL") or effective.get("model") or env.get("ANTHROPIC_MODEL") or "").strip()
+        model = (settings.get("model") or env.get("TINYCODER_MODEL") or env.get("ANTHROPIC_MODEL") or "").strip()
         base_url = (env.get("ANTHROPIC_BASE_URL") or "").strip() or "https://api.anthropic.com"
         auth_token = (env.get("ANTHROPIC_AUTH_TOKEN") or "").strip()
         api_key = (env.get("ANTHROPIC_API_KEY") or "").strip()
@@ -186,7 +193,8 @@ async def load_runtime_config() -> RuntimeConfig:
         provider_type = "openai"
         upper = provider.upper().replace("-", "_")
         model = (
-            os.environ.get("TINYCODER_MODEL")
+            settings.get("model")
+            or env.get("TINYCODER_MODEL")
             or env.get(f"TINYCODER_{upper}_MODEL")
             or str(custom_provider.get("model") or "")
         ).strip()
@@ -199,7 +207,7 @@ async def load_runtime_config() -> RuntimeConfig:
     else:
         raise RuntimeError(f"Unsupported model provider: {provider}. Use anthropic, qwen, or add a custom OpenAI-compatible provider with /provider add.")
 
-    raw_max = os.environ.get("TINYCODER_MAX_OUTPUT_TOKENS", effective.get("maxOutputTokens") or env.get("TINYCODER_MAX_OUTPUT_TOKENS"))
+    raw_max = settings.get("maxOutputTokens") or env.get("TINYCODER_MAX_OUTPUT_TOKENS")
     max_out: int | None = None
     try:
         if raw_max is not None:
@@ -209,16 +217,16 @@ async def load_runtime_config() -> RuntimeConfig:
     except (TypeError, ValueError):
         max_out = None
     if not model:
-        raise RuntimeError("No model configured. Set ~/.tinycoder/settings.json or a provider-specific model env variable.")
+        raise RuntimeError("No model configured in ~/.tinycoder/settings.json.")
     if not auth_token and not api_key:
-        raise RuntimeError("No auth configured. Set an API key/auth token in ~/.tinycoder/settings.json or process env.")
+        raise RuntimeError("No auth configured in ~/.tinycoder/settings.json.")
     result: RuntimeConfig = {
         "provider": provider,
         "providerType": provider_type,
         "model": model,
         "baseUrl": base_url,
-        "mcpServers": effective.get("mcpServers") or {},
-        "sourceSummary": f"config: {TINYCODER_SETTINGS_PATH} > {CLAUDE_SETTINGS_PATH} > process.env",
+        "mcpServers": settings.get("mcpServers") or {},
+        "sourceSummary": f"config: {TINYCODER_SETTINGS_PATH}",
     }
     if auth_token:
         result["authToken"] = auth_token

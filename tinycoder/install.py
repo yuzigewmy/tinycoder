@@ -4,7 +4,7 @@ import asyncio
 import os
 from pathlib import Path
 
-from .config import TINYCODER_SETTINGS_PATH, load_effective_settings, save_tinycoder_settings
+from .config import TINYCODER_SETTINGS_PATH, load_tinycoder_settings, save_tinycoder_settings
 
 
 def has_path_entry(target: str) -> bool:
@@ -26,7 +26,7 @@ def secret_prompt_suffix(secret: str | None = None) -> str:
 
 
 async def main() -> None:
-    settings = await load_effective_settings()
+    settings = await load_tinycoder_settings()
     current_env = settings.get("env") or {}
     print("tinycoder installer")
     print(f"配置会写入 {TINYCODER_SETTINGS_PATH}")

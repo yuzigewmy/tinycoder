@@ -3,15 +3,19 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import sys
 
-RESET = "\u001b[0m"
-DIM = "\u001b[2m"
-CYAN = "\u001b[36m"
-YELLOW = "\u001b[33m"
-MAGENTA = "\u001b[35m"
-BOLD = "\u001b[1m"
-ITALIC = "\u001b[3m"
+from .theme import (
+    ACCENT,
+    BOLD,
+    CODE,
+    DIM,
+    ITALIC,
+    MUTED,
+    WARNING,
+    color_enabled,
+    glyph,
+    style,
+)
 
 MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdown", ".mkd", ".mdx"}
 
@@ -32,22 +36,20 @@ def _color_enabled(color: bool | None) -> bool:
         return color
     if os.environ.get("NO_COLOR"):
         return False
-    value = os.environ.get("TINYCODER_MARKDOWN_COLOR", "auto").strip().lower()
+    value = os.environ.get("TINYCODER_MARKDOWN_COLOR", "").strip().lower()
     if value in {"0", "false", "off", "no", "plain"}:
         return False
     if value in {"1", "true", "on", "yes", "ansi"}:
         return True
-    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+    return color_enabled()
 
 
 def _style(text: str, *codes: str, color: bool) -> str:
-    if not color or not text:
-        return text
-    return "".join(codes) + text + RESET
+    return style(text, *codes, enabled=color)
 
 
 def _terminal_width(default: int = 100) -> int:
-    return max(60, shutil.get_terminal_size((default, 40)).columns)
+    return max(20, min(104, shutil.get_terminal_size((default, 40)).columns))
 
 
 def _split_table_row(line: str) -> list[str]:
@@ -94,7 +96,7 @@ def _render_inline(text: str, *, color: bool) -> str:
         text,
     )
     # Inline code before emphasis, so asterisks inside code are preserved.
-    text = re.sub(r"`([^`]+)`", lambda m: _style(m.group(1), MAGENTA, color=color), text)
+    text = re.sub(r"`([^`]+)`", lambda m: _style(m.group(1), CODE, color=color), text)
     text = re.sub(r"\*\*([^*]+)\*\*", lambda m: _style(m.group(1), BOLD, color=color), text)
     text = re.sub(r"__([^_]+)__", lambda m: _style(m.group(1), BOLD, color=color), text)
     text = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", lambda m: _style(m.group(1), ITALIC, color=color), text)
@@ -167,32 +169,39 @@ def render_markdownish(input_text: str, *, color: bool | None = None) -> str:
         if heading:
             level = len(heading.group(1))
             prefix = "" if level <= 2 else "· "
-            rendered.append(_style(prefix + _render_inline(heading.group(2), color=use_color), CYAN, BOLD, color=use_color))
+            rendered.append(_style(prefix + _render_inline(heading.group(2), color=use_color), ACCENT, BOLD, color=use_color))
             continue
 
         quote = re.match(r"^\s*>\s?(.*)$", line)
         if quote:
-            rendered.append(_style("│ " + _render_inline(quote.group(1), color=use_color), DIM, color=use_color))
+            rendered.append(
+                _style(
+                    f"{glyph('│', '|')} "
+                    + _render_inline(quote.group(1), color=use_color),
+                    MUTED,
+                    color=use_color,
+                )
+            )
             continue
 
         task = re.match(r"^(\s*)[-*+]\s+\[([ xX])\]\s+(.+)$", line)
         if task:
             indent = task.group(1)
-            checked = "✓" if task.group(2).lower() == "x" else " "
-            rendered.append(f"{indent}{_style('[' + checked + ']', YELLOW, color=use_color)} {_render_inline(task.group(3), color=use_color)}")
+            checked = glyph("√", "x") if task.group(2).lower() == "x" else " "
+            rendered.append(f"{indent}{_style('[' + checked + ']', WARNING, color=use_color)} {_render_inline(task.group(3), color=use_color)}")
             continue
 
         unordered = re.match(r"^(\s*)[-*+]\s+(.+)$", line)
         if unordered:
             indent = unordered.group(1)
-            rendered.append(f"{indent}{_style('•', YELLOW, color=use_color)} {_render_inline(unordered.group(2), color=use_color)}")
+            rendered.append(f"{indent}{_style(glyph('•', '-'), WARNING, color=use_color)} {_render_inline(unordered.group(2), color=use_color)}")
             continue
 
         ordered = re.match(r"^(\s*)\d+[.)]\s+(.+)$", line)
         if ordered:
             indent = ordered.group(1)
             number = re.match(r"^\s*(\d+)", line).group(1)  # type: ignore[union-attr]
-            rendered.append(f"{indent}{_style(number + '.', YELLOW, color=use_color)} {_render_inline(ordered.group(2), color=use_color)}")
+            rendered.append(f"{indent}{_style(number + '.', WARNING, color=use_color)} {_render_inline(ordered.group(2), color=use_color)}")
             continue
 
         rendered.append(_render_inline(line, color=use_color))

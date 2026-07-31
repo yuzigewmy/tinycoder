@@ -81,9 +81,19 @@ async def main(argv: list[str] | None = None) -> None:
     except Exception:
         runtime = None
 
-    tools = await create_default_tool_registry({"cwd": cwd, "runtime": runtime})
     try:
-        await hydrate_mcp_tools({"cwd": cwd, "runtime": runtime, "tools": tools})
+        effective_settings = await load_effective_settings()
+    except Exception:
+        effective_settings = {}
+    # MCP has its own user/project configuration files. Keep those inputs out
+    # of the model runtime while still exposing the merged servers to tools.
+    tool_runtime = {
+        **(runtime or {}),
+        "mcpServers": effective_settings.get("mcpServers") or {},
+    }
+    tools = await create_default_tool_registry({"cwd": cwd, "runtime": tool_runtime})
+    try:
+        await hydrate_mcp_tools({"cwd": cwd, "runtime": tool_runtime, "tools": tools})
     except Exception:
         pass
 
@@ -92,7 +102,7 @@ async def main(argv: list[str] | None = None) -> None:
     model = ModelRouter(tools, load_runtime_config)
     memory = None
     try:
-        memory = create_memory_service(cwd, await load_effective_settings())
+        memory = create_memory_service(cwd, effective_settings)
     except Exception:
         memory = None
     messages: list[dict[str, Any]] = [{"role": "system", "content": await build_system_prompt(cwd, permissions.get_summary(), {"skills": tools.get_skills(), "mcpServers": tools.get_mcp_servers()})}]

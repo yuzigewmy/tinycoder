@@ -141,44 +141,18 @@ python -m tinycoder
 
 ### Anthropic
 
-Linux / macOS：
+在 TinyCoder 中执行：
 
-```bash
-export TINYCODER_MODEL_PROVIDER=anthropic
-export ANTHROPIC_MODEL=claude-3-5-sonnet-latest
-export ANTHROPIC_API_KEY=your_api_key
-python -m tinycoder
-```
-
-Windows PowerShell：
-
-```powershell
-$env:TINYCODER_MODEL_PROVIDER="anthropic"
-$env:ANTHROPIC_MODEL="claude-3-5-sonnet-latest"
-$env:ANTHROPIC_API_KEY="your_api_key"
-python -m tinycoder
+```text
+/use anthropic claude-3-5-sonnet-latest your_api_key https://api.anthropic.com
 ```
 
 ### Qwen / DashScope
 
-Linux / macOS：
+在 TinyCoder 中执行：
 
-```bash
-export TINYCODER_MODEL_PROVIDER=qwen
-export DASHSCOPE_MODEL=qwen-plus
-export DASHSCOPE_API_KEY=your_dashscope_api_key
-export DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-python -m tinycoder
-```
-
-Windows PowerShell：
-
-```powershell
-$env:TINYCODER_MODEL_PROVIDER="qwen"
-$env:DASHSCOPE_MODEL="qwen-plus"
-$env:DASHSCOPE_API_KEY="your_dashscope_api_key"
-$env:DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
-python -m tinycoder
+```text
+/use qwen qwen-plus your_dashscope_api_key https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
 ### 自定义 OpenAI-compatible 服务
@@ -633,13 +607,12 @@ TINYCODER_STREAM=0
 
 ### 配置来源与优先级
 
-高优先级覆盖低优先级：
+模型运行配置只有一个事实来源：`~/.tinycoder/settings.json`。
 
-1. 进程环境变量；
-2. `~/.tinycoder/settings.json`；
-3. 项目级 `./.mcp.json`（仅 MCP Server）；
-4. 用户级 `~/.tinycoder/mcp.json`（仅 MCP Server）；
-5. 兼容配置 `~/.claude/settings.json`。
+- provider、model、Base URL、API Key/Auth Token 和 `maxOutputTokens` 只从该文件读取；
+- 进程、用户和系统级环境变量不会覆盖模型运行配置；
+- `~/.claude/settings.json` 不再作为模型配置回退来源；
+- MCP 仍使用独立的用户级 `~/.tinycoder/mcp.json` 和项目级 `./.mcp.json`，不会混入模型路由配置。
 
 最小配置示例：
 
@@ -666,38 +639,31 @@ TINYCODER_STREAM=0
 }
 ```
 
-> `settings.json` 和 MCP Token 文件当前是本地明文 JSON。优先使用进程环境变量保存真实密钥，并限制 `~/.tinycoder` 的文件权限。
+> `settings.json` 和 MCP Token 文件当前是本地明文 JSON。请使用操作系统文件权限限制 `~/.tinycoder` 的访问范围，不要提交或共享该目录。
 
-### 常用环境变量
-
-| 变量 | 作用 |
-| --- | --- |
-| `TINYCODER_HOME` | 数据目录，默认 `~/.tinycoder` |
-| `TINYCODER_MODEL_MODE` | `mock` 时启用 Mock Adapter |
-| `TINYCODER_MODEL_PROVIDER` | `anthropic`、`qwen` 或自定义 Provider 名称 |
-| `TINYCODER_MODEL` | 覆盖当前模型名 |
-| `TINYCODER_STREAM` | `0/false/off/no` 时关闭流式输出 |
-| `TINYCODER_MAX_OUTPUT_TOKENS` | 单次模型最大输出 Token |
-| `TINYCODER_MAX_RETRIES` | 429/5xx 最大重试次数，默认 4 |
-| `ANTHROPIC_MODEL` | Anthropic 模型名 |
-| `ANTHROPIC_API_KEY` | Anthropic API Key |
-| `ANTHROPIC_AUTH_TOKEN` | Anthropic Bearer Token |
-| `ANTHROPIC_BASE_URL` | Anthropic API 根地址 |
-| `DASHSCOPE_MODEL` / `QWEN_MODEL` | Qwen 模型名 |
-| `DASHSCOPE_API_KEY` / `QWEN_API_KEY` | Qwen API Key |
-| `DASHSCOPE_AUTH_TOKEN` / `QWEN_AUTH_TOKEN` | Qwen Bearer Token |
-| `DASHSCOPE_BASE_URL` / `QWEN_BASE_URL` | OpenAI-compatible API 根地址 |
-
-自定义 Provider 还可以使用：
+`settings.json` 中的 `env` 是历史兼容的 JSON 配置节点，不是操作系统环境变量。模型相关键必须写在该文件中，例如：
 
 ```text
+TINYCODER_MODEL_PROVIDER
+TINYCODER_MODEL
+ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL
+DASHSCOPE_API_KEY / DASHSCOPE_AUTH_TOKEN / DASHSCOPE_BASE_URL
 TINYCODER_<PROVIDER>_MODEL
 TINYCODER_<PROVIDER>_API_KEY
 TINYCODER_<PROVIDER>_AUTH_TOKEN
 TINYCODER_<PROVIDER>_BASE_URL
 ```
 
-其中 `<PROVIDER>` 会转为大写并将 `-` 替换为 `_`。
+### 常用环境变量
+
+下列环境变量只控制数据目录或运行行为，不参与 provider、model、Base URL 和认证信息的解析：
+
+| 变量 | 作用 |
+| --- | --- |
+| `TINYCODER_HOME` | 数据目录，默认 `~/.tinycoder` |
+| `TINYCODER_MODEL_MODE` | `mock` 时启用 Mock Adapter |
+| `TINYCODER_STREAM` | `0/false/off/no` 时关闭流式输出 |
+| `TINYCODER_MAX_RETRIES` | 429/5xx 最大重试次数，默认 4 |
 
 ## 工具与权限
 
@@ -1105,7 +1071,7 @@ python -m tinycoder
 ### 安全边界
 
 1. **不是 OS 沙箱**：权限系统是 TinyCoder 应用层策略。已经获准执行的 Python、Node 或 Shell 命令拥有当前用户进程的系统权限。
-2. **密钥可能明文落盘**：使用 `/apikey`、`/use`、`/provider add` 或 `mcp login` 会写入 `~/.tinycoder` 下的 JSON 文件。生产密钥优先使用环境变量。
+2. **密钥可能明文落盘**：使用 `/apikey`、`/use`、`/provider add` 或 `mcp login` 会写入 `~/.tinycoder` 下的 JSON 文件。请限制该目录的文件权限，并避免提交、共享或备份到不可信位置。
 3. **会话可能包含敏感内容**：用户输入、工具结果、文件片段和命令输出会写入会话 JSONL；请保护或定期清理数据目录。
 4. **Web、模型和远程 MCP 是外部边界**：发送前应确认仓库内容、记忆和 Tool 参数是否允许离开本机。
 5. **项目规则不可信**：仓库中的 `CLAUDE.md`、rules 和 `MEMORY.md` 只作为 user context，不具有系统权限，但模型仍可能受到其内容影响。

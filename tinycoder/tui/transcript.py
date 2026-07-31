@@ -1,37 +1,45 @@
 from __future__ import annotations
 
-import re
 import shutil
 from typing import Any
 
-from .chrome import char_display_width, wrap_panel_body_line
+from .chrome import (
+    char_display_width,
+    render_activity_line,
+    render_assistant_heading,
+    strip_ansi,
+    wrap_panel_body_line,
+)
 from .markdown import render_markdownish
-
-RESET = "\u001b[0m"
-DIM = "\u001b[2m"
-CYAN = "\u001b[36m"
-GREEN = "\u001b[32m"
-YELLOW = "\u001b[33m"
-RED = "\u001b[31m"
-MAGENTA = "\u001b[35m"
-BOLD = "\u001b[1m"
-BLUE = "\u001b[34m"
-REVERSE = "\u001b[7m"
-
-
-def strip_ansi(value: str) -> str:
-    return re.sub(r"\u001b\[[\d;]*[A-Za-z]", "", value)
+from .theme import (
+    ACCENT,
+    BOLD,
+    BORDER_SOFT,
+    DIM,
+    MUTED,
+    RESET,
+    REVERSE,
+    WARNING,
+    glyph,
+    style,
+)
 
 
-def slice_by_display_columns(input_text: str, start_col: int, end_col: int | float) -> str:
+def slice_by_display_columns(
+    input_text: str,
+    start_col: int,
+    end_col: int | float,
+) -> str:
     if start_col >= end_col:
         return ""
-    result = ""; col = 0
+    result = ""
+    col = 0
     for ch in input_text:
         width = char_display_width(ch)
         next_col = col + width
         if next_col <= start_col:
-            col = next_col; continue
+            col = next_col
+            continue
         if col >= end_col:
             break
         result += ch
@@ -39,36 +47,54 @@ def slice_by_display_columns(input_text: str, start_col: int, end_col: int | flo
     return result
 
 
-def highlight_range(line: str, start_col: int, end_col: int | float) -> str:
+def highlight_range(
+    line: str,
+    start_col: int,
+    end_col: int | float,
+) -> str:
     if start_col >= end_col:
         return line
-    result = ""; visible_col = 0; i = 0; highlighted = False
-    while i < len(line):
-        if line[i] == "\u001b":
-            escape_start = i; i += 1
-            if i < len(line) and line[i] == "[":
-                i += 1
-                while i < len(line) and (line[i] < "@" or line[i] > "~"):
-                    i += 1
-                i += 1
-            seq = line[escape_start:i]
-            result += seq
-            if seq == RESET and highlighted:
+    result = ""
+    visible_col = 0
+    index = 0
+    highlighted = False
+    while index < len(line):
+        if line[index] == "\u001b":
+            escape_start = index
+            index += 1
+            if index < len(line) and line[index] == "[":
+                index += 1
+                while index < len(line) and (
+                    line[index] < "@" or line[index] > "~"
+                ):
+                    index += 1
+                index += 1
+            sequence = line[escape_start:index]
+            result += sequence
+            if sequence == RESET and highlighted:
                 result += REVERSE
             continue
-        ch = line[i]
+        ch = line[index]
         width = char_display_width(ch)
         if not highlighted and visible_col >= start_col:
-            result += REVERSE; highlighted = True
-        if not highlighted and visible_col < start_col and visible_col + width > start_col:
-            result += REVERSE; highlighted = True
+            result += REVERSE
+            highlighted = True
+        if (
+            not highlighted
+            and visible_col < start_col
+            and visible_col + width > start_col
+        ):
+            result += REVERSE
+            highlighted = True
         if highlighted and visible_col >= end_col:
-            result += RESET; highlighted = False
+            result += RESET
+            highlighted = False
         result += ch
         visible_col += width
-        i += 1
+        index += 1
         if highlighted and visible_col >= end_col:
-            result += RESET; highlighted = False
+            result += RESET
+            highlighted = False
     if highlighted:
         result += RESET
     return result
@@ -82,37 +108,76 @@ def preview_tool_body(tool_name: str, body: str) -> str:
     max_chars = 1000 if tool_name == "read_file" else 1800
     max_lines = 20 if tool_name == "read_file" else 36
     lines = body.split("\n")
-    limited_lines = lines[:max_lines]
-    limited = "\n".join(limited_lines)
+    limited = "\n".join(lines[:max_lines])
     if len(limited) > max_chars:
         limited = limited[:max_chars] + "..."
     if limited != body:
-        return f"{limited}\n{DIM}... output truncated in transcript{RESET}"
+        return (
+            f"{limited}\n"
+            f"{style('... 工具输出已在会话视图中截断', MUTED)}"
+        )
     return limited
+
+
+def _render_user_entry(body: str) -> str:
+    top = (
+        f"{style(glyph('╭─', '+-'), ACCENT)} "
+        f"{style('YOU', ACCENT, BOLD)}"
+    )
+    rail = style(glyph("│", "|"), BORDER_SOFT)
+    bottom = style(glyph("╰─", "+-"), BORDER_SOFT)
+    content = "\n".join(f"{rail} {line}" for line in body.split("\n"))
+    return f"{top}\n{content}\n{bottom}"
+
+
+def _render_assistant_entry(body: str) -> str:
+    rendered = render_markdownish(body)
+    return f"{render_assistant_heading()}\n{indent_block(rendered)}"
+
+
+def _render_progress_entry(body: str) -> str:
+    marker = glyph("◇", "*")
+    heading = (
+        f"{style(marker, WARNING)} "
+        f"{style('AGENT ACTIVITY', WARNING, BOLD)}"
+    )
+    return f"{heading}\n{indent_block(render_markdownish(body))}"
+
+
+def _render_tool_entry(entry: dict[str, Any]) -> str:
+    status = str(entry.get("status") or "error")
+    tool_name = str(entry.get("toolName") or "unknown")
+    raw_body = str(entry.get("body") or "")
+    if status == "running":
+        return render_activity_line(tool_name, raw_body, "running")
+    if entry.get("collapsed"):
+        body = style(
+            str(entry.get("collapsedSummary") or "工具输出已折叠"),
+            MUTED,
+        )
+    elif entry.get("collapsePhase"):
+        phase = "." * int(entry.get("collapsePhase") or 0)
+        body = style(f"正在折叠工具输出{phase}", MUTED)
+    else:
+        body = preview_tool_body(tool_name, render_markdownish(raw_body))
+    heading = render_activity_line(tool_name, "", status)
+    return f"{heading}\n{indent_block(body, '     ')}" if body else heading
 
 
 def render_transcript_entry(entry: dict[str, Any]) -> str:
     kind = entry.get("kind")
+    body = str(entry.get("body") or "")
     if kind == "user":
-        return f"{CYAN}{BOLD}you{RESET}\n{indent_block(str(entry.get('body') or ''))}"
+        return _render_user_entry(body)
     if kind == "assistant":
-        return f"{GREEN}{BOLD}assistant{RESET}\n{indent_block(render_markdownish(str(entry.get('body') or '')))}"
+        return _render_assistant_entry(body)
     if kind == "progress":
-        return f"{YELLOW}{BOLD}progress{RESET}\n{indent_block(render_markdownish(str(entry.get('body') or '')))}"
-    status = f"{YELLOW}running{RESET}" if entry.get("status") == "running" else f"{GREEN}ok{RESET}" if entry.get("status") == "success" else f"{RED}err{RESET}"
-    if entry.get("status") == "running":
-        body = str(entry.get("body") or "")
-    elif entry.get("collapsed"):
-        body = f"{DIM}{entry.get('collapsedSummary') or 'output collapsed'}{RESET}"
-    elif entry.get("collapsePhase"):
-        body = f"{DIM}collapsing{'.' * int(entry.get('collapsePhase'))}{RESET}"
-    else:
-        body = preview_tool_body(str(entry.get("toolName") or "unknown"), render_markdownish(str(entry.get("body") or "")))
-    return f"{MAGENTA}{BOLD}tool{RESET} {entry.get('toolName') or 'unknown'} {status}\n{indent_block(body)}"
+        return _render_progress_entry(body)
+    return _render_tool_entry(entry)
 
 
 def get_transcript_panel_width() -> int:
-    return max(60, shutil.get_terminal_size((100, 40)).columns)
+    return max(20, min(104, shutil.get_terminal_size((100, 40)).columns))
 
 
 def get_transcript_window_size(window_size: int | None = None) -> int:
@@ -122,27 +187,39 @@ def get_transcript_window_size(window_size: int | None = None) -> int:
 
 
 def render_transcript_lines(entries: list[dict[str, Any]]) -> list[str]:
-    rendered = [render_transcript_entry(entry) for entry in entries]
-    separator = f"{BLUE}{DIM}·{RESET}"
     logical: list[str] = []
-    for index, block in enumerate(rendered):
-        if index > 0:
-            logical.extend(["", separator, ""])
-        logical.extend(block.split("\n"))
+    for index, entry in enumerate(entries):
+        if index:
+            logical.append("")
+        logical.extend(render_transcript_entry(entry).split("\n"))
     width = get_transcript_panel_width()
     lines: list[str] = []
     for line in logical:
-        lines.extend(wrap_panel_body_line(line, width))
+        # wrap_panel_body_line reserves panel gutters; adding four keeps transcript
+        # text within the real terminal width without duplicating wrapping logic.
+        lines.extend(wrap_panel_body_line(line, width + 4))
     return lines
 
 
-def get_transcript_max_scroll_offset(entries: list[dict[str, Any]], window_size: int | None = None) -> int:
+def get_transcript_max_scroll_offset(
+    entries: list[dict[str, Any]],
+    window_size: int | None = None,
+) -> int:
     if not entries:
         return 0
-    return max(0, len(render_transcript_lines(entries)) - get_transcript_window_size(window_size))
+    return max(
+        0,
+        len(render_transcript_lines(entries))
+        - get_transcript_window_size(window_size),
+    )
 
 
-def render_transcript(entries: list[dict[str, Any]], scroll_offset: int, window_size: int | None = None, selection: dict[str, Any] | None = None) -> str:
+def render_transcript(
+    entries: list[dict[str, Any]],
+    scroll_offset: int,
+    window_size: int | None = None,
+    selection: dict[str, Any] | None = None,
+) -> str:
     if not entries:
         return ""
     lines = render_transcript_lines(entries)
@@ -152,38 +229,57 @@ def render_transcript(entries: list[dict[str, Any]], scroll_offset: int, window_
     end = len(lines) - offset
     start = max(0, end - page_size)
     if selection:
-        start_line = int(selection.get("startLine") or 0); end_line = int(selection.get("endLine") or 0)
-        start_col = int(selection.get("startCol") or 0); end_col = selection.get("endCol") if selection.get("endCol") is not None else 0
-        end_col = int(end_col)
-        new_lines = []
+        start_line = int(selection.get("startLine") or 0)
+        end_line = int(selection.get("endLine") or 0)
+        start_col = int(selection.get("startCol") or 0)
+        end_col_value = selection.get("endCol")
+        end_col = int(end_col_value if end_col_value is not None else 0)
+        highlighted_lines = []
         for index, line in enumerate(lines):
             if index < start_line or index > end_line:
-                new_lines.append(line)
+                highlighted_lines.append(line)
             elif index == start_line and index == end_line:
-                new_lines.append(highlight_range(line, start_col, end_col))
+                highlighted_lines.append(
+                    highlight_range(line, start_col, end_col)
+                )
             elif index == start_line:
-                new_lines.append(highlight_range(line, start_col, float("inf")))
+                highlighted_lines.append(
+                    highlight_range(line, start_col, float("inf"))
+                )
             elif index == end_line:
-                new_lines.append(highlight_range(line, 0, end_col))
+                highlighted_lines.append(highlight_range(line, 0, end_col))
             else:
-                new_lines.append(highlight_range(line, 0, float("inf")))
-        lines = new_lines
+                highlighted_lines.append(
+                    highlight_range(line, 0, float("inf"))
+                )
+        lines = highlighted_lines
     body = "\n".join(lines[start:end])
-    return body if offset == 0 else f"{body}\n\n{DIM}scroll offset: {offset}{RESET}"
+    if offset == 0:
+        return body
+    return f"{body}\n\n{style(f'已向上滚动 {offset} 行', DIM)}"
 
 
-def extract_selected_text(entries: list[dict[str, Any]], selection: dict[str, Any]) -> str:
+def extract_selected_text(
+    entries: list[dict[str, Any]],
+    selection: dict[str, Any],
+) -> str:
     lines = render_transcript_lines(entries)
-    start_line = int(selection.get("startLine") or 0); end_line = int(selection.get("endLine") or 0)
-    start_col = int(selection.get("startCol") or 0); end_col = int(selection.get("endCol") or 0)
+    start_line = int(selection.get("startLine") or 0)
+    end_line = int(selection.get("endLine") or 0)
+    start_col = int(selection.get("startCol") or 0)
+    end_col = int(selection.get("endCol") or 0)
     result: list[str] = []
-    for i in range(start_line, min(end_line, len(lines) - 1) + 1):
-        plain = strip_ansi(lines[i])
-        if i == start_line and i == end_line:
-            result.append(slice_by_display_columns(plain, start_col, end_col))
-        elif i == start_line:
-            result.append(slice_by_display_columns(plain, start_col, float("inf")))
-        elif i == end_line:
+    for index in range(start_line, min(end_line, len(lines) - 1) + 1):
+        plain = strip_ansi(lines[index])
+        if index == start_line and index == end_line:
+            result.append(
+                slice_by_display_columns(plain, start_col, end_col)
+            )
+        elif index == start_line:
+            result.append(
+                slice_by_display_columns(plain, start_col, float("inf"))
+            )
+        elif index == end_line:
             result.append(slice_by_display_columns(plain, 0, end_col))
         else:
             result.append(plain)

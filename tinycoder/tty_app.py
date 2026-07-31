@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 import uuid
@@ -34,7 +33,18 @@ from .terminal_input import (
 )
 from .tui.input_parser import maybe_need_more_for_escape_sequence, parse_input_chunk
 from .tui.markdown import MarkdownStreamPrinter, is_markdown_path, render_markdownish
-from .ui import clear_screen, render_banner, render_permission_prompt, render_transcript_lines
+from .tui.theme import ACCENT_STRONG, BOLD, glyph, style
+from .ui import (
+    clear_screen,
+    render_activity_line,
+    render_assistant_heading,
+    render_banner,
+    render_permission_prompt,
+    render_section_header,
+    render_session_picker as render_session_picker_surface,
+    render_status_line,
+    render_transcript_lines,
+)
 from .utils.token_estimator import compute_context_stats
 
 
@@ -52,14 +62,14 @@ async def _permission_prompt(request: dict[str, Any]) -> dict[str, Any]:
     print("\n" + render_permission_prompt(request) + "\n")
     choice_map = {str(choice.get("key")): choice for choice in request.get("choices") or []}
     while True:
-        answer = input("permission choice: ").strip()
+        answer = input("选择权限选项: ").strip()
         if answer in choice_map:
             choice = choice_map[answer]
             result = {"decision": choice.get("decision")}
             if choice.get("decision") == "deny_with_feedback":
-                result["feedback"] = input("feedback to model: ")
+                result["feedback"] = input("给模型的反馈: ")
             return result
-        print("Invalid choice.")
+        print("无效选项，请输入面板中的编号。")
 
 
 def _last_assistant_content(messages: list[dict[str, Any]]) -> str | None:
@@ -105,6 +115,19 @@ class AssistantStreamFilter:
         self.printer = printer
         self.buffer = ""
         self.mode: str | None = None
+        self.heading_printed = False
+
+    def emit_heading(self) -> None:
+        if self.heading_printed:
+            return
+        print(f"\n{render_assistant_heading()}")
+        self.heading_printed = True
+
+    def _write_visible(self, value: str) -> None:
+        if not value:
+            return
+        self.emit_heading()
+        self.printer.write(value)
 
     def write(self, delta: str) -> None:
         if not delta:
@@ -142,37 +165,53 @@ class AssistantStreamFilter:
             if self.mode == "final":
                 final_end = self.buffer.lower().find("</final>")
                 if final_end >= 0:
-                    self.printer.write(self.buffer[:final_end])
+                    self._write_visible(self.buffer[:final_end])
                     self.buffer = self.buffer[final_end + len("</final>"):]
                     self.mode = None
                     continue
-                self.printer.write(self.buffer)
+                self._write_visible(self.buffer)
                 self.buffer = ""
                 return
 
             if self.buffer.lstrip().startswith("<") or self.buffer.lstrip().startswith("["):
                 if len(self.buffer.lstrip()) < len("<progress>"):
                     return
-            self.printer.write(self.buffer)
+            self._write_visible(self.buffer)
             self.buffer = ""
 
     def finish(self) -> None:
         if self.mode not in {"progress"} and self.buffer:
-            self.printer.write(self.buffer)
+            self._write_visible(self.buffer)
         self.buffer = ""
 
 
+def _tool_input_preview(name: Any, input_value: Any) -> str:
+    if isinstance(input_value, dict):
+        for key in ("path", "command", "query", "url", "pattern"):
+            value = input_value.get(key)
+            if value:
+                return _single_line_preview(value)
+    return _single_line_preview(input_value)
+
+
 def _render_tool_start(name: Any, input_value: Any) -> None:
-    preview = _single_line_preview(input_value)
-    suffix = f" {preview}" if preview else ""
-    print(f"[tool] {name}{suffix}")
+    print(
+        render_activity_line(
+            str(name or "unknown"),
+            _tool_input_preview(name, input_value),
+            "running",
+        )
+    )
 
 
 def _render_tool_result(name: Any, output: Any, is_error: bool) -> None:
-    status = "err" if is_error else "ok"
-    preview = _single_line_preview(output)
-    suffix = f" - {preview}" if preview else ""
-    print(f"[tool:{name} {status}]{suffix}")
+    print(
+        render_activity_line(
+            str(name or "unknown"),
+            _single_line_preview(output),
+            "error" if is_error else "success",
+        )
+    )
 
 
 def _analyze_error(error: BaseException) -> str:
@@ -201,12 +240,11 @@ def _analyze_error(error: BaseException) -> str:
 
 SENSITIVE_MODEL_COMMANDS = ("/apikey ", "/use ")
 MODEL_CONFIG_COMMANDS = ("/provider ", "/model ", "/apikey ", "/base-url ", "/use ")
-PROMPT_RED = "\033[31m"
-PROMPT_RESET = "\033[0m"
-PROMPT_TEXT = "tinycoder> "
-COLORED_PROMPT = f"{PROMPT_RED}{PROMPT_TEXT}{PROMPT_RESET}"
 INTERRUPTED_MESSAGE = "已中断当前模型输出。"
-START_PAGE_HELP = "输入 /help 查看中文命令说明，输入 /exit 退出。"
+
+
+def _interactive_prompt() -> str:
+    return f"{style(glyph('›', '>'), ACCENT_STRONG, BOLD)} "
 
 
 def _is_sensitive_model_command(input_text: str) -> bool:
@@ -473,16 +511,18 @@ def _read_interactive_line_posix(prompt: str, history_entries: list[str]) -> str
 
 
 def _format_session_option(meta: dict[str, Any], selected: bool) -> str:
-    marker = ">" if selected else " "
+    marker = glyph("◆", ">") if selected else glyph("◇", " ")
     title = str(meta.get("title") or "(untitled)")
-    return f"{marker} {meta.get('id')}  {title}  messages={meta.get('messageCount')}"
+    return (
+        f"{marker} {title}  "
+        f"{meta.get('messageCount') or 0} 条消息  "
+        f"{meta.get('id')}"
+    )
 
 
 def _render_session_picker(sessions: list[dict[str, Any]], index: int) -> None:
     print("\033[2J\033[H", end="")
-    print("Select a session with Up/Down, Enter to resume, Esc/Ctrl+C to cancel.\n")
-    for i, meta in enumerate(sessions):
-        print(_format_session_option(meta, i == index))
+    print(render_session_picker_surface(sessions, index))
 
 
 def _pick_session_windows(sessions: list[dict[str, Any]]) -> str | None:
@@ -496,7 +536,7 @@ def _pick_session_windows(sessions: list[dict[str, Any]]) -> str | None:
             print("")
             return str(sessions[index].get("id"))
         if char in {"\u001b", "\u0003"}:
-            print("\nCanceled.")
+            print("\n已取消恢复会话。")
             return None
         if char in {"\x00", "\xe0"}:
             key = msvcrt.getwch()
@@ -545,7 +585,7 @@ def _pick_session_posix(sessions: list[dict[str, Any]]) -> str | None:
                         index = min(len(sessions) - 1, index + 1)
                         _render_session_picker(sessions, index)
                         continue
-                print("\nCanceled.")
+                print("\n已取消恢复会话。")
                 return None
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
@@ -554,7 +594,7 @@ def _pick_session_posix(sessions: list[dict[str, Any]]) -> str | None:
 async def _pick_resume_session(cwd: str) -> str | None:
     sessions = await list_sessions(cwd)
     if not sessions:
-        print("No saved sessions.")
+        print("暂无可恢复的历史会话。")
         return None
     visible = sessions[:20]
     return _pick_session_windows(visible) if os.name == "nt" else _pick_session_posix(visible)
@@ -604,7 +644,7 @@ async def _view_session(cwd: str, session_id: str) -> None:
     if not entries:
         print("当前会话暂无可查看内容。")
         return
-    print(f"\n[session {session_id}]\n")
+    print(f"\n{render_section_header('SESSION', session_id)}\n")
     print(_render_view_entries(entries))
     print("")
 
@@ -632,12 +672,12 @@ def _render_session_workspace(
     session_id: str | None = None,
     entries: list[dict[str, Any]] | None = None,
 ) -> str:
-    sections = [render_banner(runtime, cwd), START_PAGE_HELP]
+    sections = [render_banner(runtime, cwd)]
     if session_id and entries:
         sections.extend(
             [
                 "",
-                f"[session {session_id}]",
+                render_section_header("SESSION", session_id),
                 "",
                 _render_view_entries(entries),
             ]
@@ -659,6 +699,7 @@ async def _show_session_workspace(
         **runtime,
         "permissionMode": permission_mode,
         "permissionModeLabel": permission_mode_label(permission_mode),
+        "sessionStatus": f"RESUMED · {session_id}" if session_id else "READY",
     }
     entries = await load_transcript(cwd, session_id) if session_id else None
     if repaint:
@@ -712,7 +753,24 @@ async def run_tty_app(args: dict[str, Any]) -> None:
 
     while True:
         try:
-            raw = _read_interactive_line(COLORED_PROMPT, history)
+            runtime = args.get("runtime") or {}
+            prompt_runtime = {
+                **runtime,
+                "permissionMode": str(
+                    getattr(permissions, "mode", "request_approval")
+                ),
+                "permissionModeLabel": permission_mode_label(
+                    str(getattr(permissions, "mode", "request_approval"))
+                ),
+            }
+            model_name = str(runtime.get("model") or "")
+            context_stats = (
+                compute_context_stats(messages, model_name)
+                if model_name
+                else None
+            )
+            print(render_status_line(prompt_runtime, cwd, context_stats))
+            raw = _read_interactive_line(_interactive_prompt(), history)
         except (EOFError, KeyboardInterrupt):
             print("")
             break
@@ -862,9 +920,14 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                 },
             )
             permissions.begin_turn()
-            stream_printer = MarkdownStreamPrinter()
+            stream_printer = MarkdownStreamPrinter(prefix_newline=False)
             stream_filter = AssistantStreamFilter(stream_printer)
             interrupted = False
+
+            def print_assistant_message(content: Any) -> None:
+                stream_filter.emit_heading()
+                print(f"{_render_assistant_output(content)}\n")
+
             try:
                 turn_args = {
                     "model": args["model"],
@@ -883,7 +946,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     "onToolStart": _render_tool_start,
                     "onToolResult": _render_tool_result,
                     "onAssistantDelta": stream_filter.write,
-                    "onAssistantMessage": lambda content: print(f"\n{_render_assistant_output(content)}\n"),
+                    "onAssistantMessage": print_assistant_message,
                     "onProgressMessage": _hide_progress_node,
                 }
                 try:
@@ -909,7 +972,7 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     except Exception as second_error:
                         analysis = _analyze_error(second_error)
                         messages.append({"role": "assistant", "content": analysis})
-                        print(f"\n{_render_assistant_output(analysis)}\n")
+                        print_assistant_message(analysis)
             except KeyboardInterrupt:
                 interrupted = True
                 messages.append({"role": "assistant", "content": INTERRUPTED_MESSAGE})
@@ -927,7 +990,10 @@ async def run_tty_app(args: dict[str, Any]) -> None:
                     event_id=user_event_id,
                 )
         except Exception as error:
-            print(f"\n{_render_assistant_output(_analyze_error(error))}\n")
+            print(
+                f"\n{render_assistant_heading()}\n"
+                f"{_render_assistant_output(_analyze_error(error))}\n"
+            )
     try:
         save_history_entries(history, cwd, session_id)
     except Exception:

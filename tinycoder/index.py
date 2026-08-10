@@ -22,6 +22,7 @@ from .model_router import ModelRouter
 from .permissions import PermissionManager, permission_mode_label
 from .prompt import build_instruction_context, build_system_prompt
 from .session import fork_session
+from .sandbox import load_sandbox_config, start_sandbox
 from .tools.index import create_default_tool_registry, hydrate_mcp_tools
 from .tty_app import run_tty_app
 from .tui.markdown import render_markdownish
@@ -50,9 +51,53 @@ def analyze_error(error: BaseException) -> str:
     return f"当前步骤没有完成。\n\n可能原因：{reason}\n\n建议处理：{suggestion}\n\n技术摘要：{text}"
 
 
+def _parse_sandbox_args(argv):
+    sandbox_value = None
+    sandbox_image = None
+    rest = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in ("-s", "--sandbox"):
+            if i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+                i += 1
+                sandbox_value = argv[i]
+            else:
+                sandbox_value = "true"
+        elif arg.startswith("--sandbox="):
+            sandbox_value = arg.split("=", 1)[1]
+        elif arg == "--sandbox-image":
+            if i + 1 < len(argv):
+                i += 1
+                sandbox_image = argv[i]
+        elif arg.startswith("--sandbox-image="):
+            sandbox_image = arg.split("=", 1)[1]
+        else:
+            rest.append(arg)
+        i += 1
+    return sandbox_value, sandbox_image, rest
+
+
 async def main(argv: list[str] | None = None) -> None:
     cwd = os.getcwd()
     argv = list(sys.argv[1:] if argv is None else argv)
+
+    # --- Sandbox entry ---
+    sandbox_value, sandbox_image, argv = _parse_sandbox_args(argv)
+    if sandbox_value is not None or os.environ.get("TINYCODER_SANDBOX", "").strip().lower() in ("1", "true"):
+        if sandbox_value is None:
+            sandbox_value = "true"
+        try:
+            sandbox_config = load_sandbox_config(
+                sandbox=sandbox_value,
+                sandbox_image=sandbox_image,
+            )
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            raise SystemExit(1)
+        if sandbox_config is not None:
+            code = start_sandbox(sandbox_config, cli_args=argv)
+            raise SystemExit(code)
 
     resume_target: str | None = None
     if "--resume" in argv:

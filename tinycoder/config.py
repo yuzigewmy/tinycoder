@@ -24,6 +24,8 @@ class TinyCoderSettings(TypedDict, total=False):
     mcpServers: dict[str, McpServerConfig]
     customProviders: dict[str, dict[str, str | int]]
     memory: dict[str, Any]
+    sandbox: bool | str
+    sandboxImage: str
 
 
 class RuntimeConfig(TypedDict, total=False):
@@ -50,6 +52,7 @@ TINYCODER_PROJECTS_DIR = TINYCODER_DIR / "projects"
 TINYCODER_MEMORY_DIR = TINYCODER_DIR / "memory"
 TINYCODER_MEMORY_DB_PATH = TINYCODER_MEMORY_DIR / "memory.db"
 CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
+TINYCODER_SANDBOX_DOCKERFILE = TINYCODER_DIR / "sandbox.Dockerfile"
 PROJECT_MCP_PATH = Path.cwd() / ".mcp.json"
 
 

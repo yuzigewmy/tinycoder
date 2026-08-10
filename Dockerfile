@@ -1,4 +1,4 @@
-﻿# TinyCoder Sandbox Image
+# TinyCoder Sandbox Image
 # Mirrors the qwen-code sandbox image design.
 # Provides an isolated Linux environment with Python and common dev tools.
 

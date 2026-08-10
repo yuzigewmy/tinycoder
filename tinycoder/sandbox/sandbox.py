@@ -1,4 +1,4 @@
-﻿"""Main sandbox entry point — mirrors qwen-code sandbox.ts.
+"""Main sandbox entry point — mirrors qwen-code sandbox.ts.
 
 When sandbox mode is enabled, TinyCoder re-launches itself inside a
 Docker/Podman container. The container mounts:

@@ -104,6 +104,8 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"name": "/cmd", "usage": "/cmd [cwd::]<command> [args...]", "description": "执行允许的开发命令，可指定工作目录。"},
     {"name": "/compact", "usage": "/compact", "description": "压缩对话上下文，释放上下文窗口。"},
     {"name": "/collapse", "usage": "/collapse", "description": "将旧的安全上下文片段折叠为摘要，保留完整转录记录。"},
+    {"name": "/agents", "usage": "/agents", "description": "???????? Agent?"},
+    {"name": "/agents", "usage": "/agents <name>", "description": "????? Agent ??????"},
     {"name": "/sandbox", "usage": "/sandbox", "description": "?????????"},
     {"name": "/sandbox", "usage": "/sandbox on|off", "description": "????????????????"},
     {"name": "/sandbox", "usage": "/sandbox image", "description": "?????????"},

@@ -1,4 +1,4 @@
-﻿"""Sandbox provider detection — mirrors qwen-code sandboxConfig.ts provider detection."""
+"""Sandbox provider detection — mirrors qwen-code sandboxConfig.ts provider detection."""
 
 from __future__ import annotations
 

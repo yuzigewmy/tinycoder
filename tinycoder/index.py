@@ -23,6 +23,7 @@ from .permissions import PermissionManager, permission_mode_label
 from .prompt import build_instruction_context, build_system_prompt
 from .session import fork_session
 from .sandbox import load_sandbox_config, start_sandbox
+from .followup import generate_suggestion
 from .tools.index import create_default_tool_registry, hydrate_mcp_tools
 from .tty_app import run_tty_app
 from .tui.markdown import render_markdownish
@@ -182,6 +183,11 @@ async def main(argv: list[str] | None = None) -> None:
                 "resumeTarget": resolved_resume,
                 "getRuntimeConfig": load_runtime_config,
                 "memory": memory,
+                "onFollowupSuggestion": (
+                    lambda messages, model: generate_suggestion(model, messages)
+                    if model is not None
+                    else None
+                ),
             })
             return
 

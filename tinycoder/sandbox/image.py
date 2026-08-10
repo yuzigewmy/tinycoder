@@ -1,4 +1,4 @@
-﻿"""Sandbox image management — mirrors qwen-code sandbox.ts image handling."""
+"""Sandbox image management — mirrors qwen-code sandbox.ts image handling."""
 
 from __future__ import annotations
 

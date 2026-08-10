@@ -104,12 +104,12 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"name": "/cmd", "usage": "/cmd [cwd::]<command> [args...]", "description": "执行允许的开发命令，可指定工作目录。"},
     {"name": "/compact", "usage": "/compact", "description": "压缩对话上下文，释放上下文窗口。"},
     {"name": "/collapse", "usage": "/collapse", "description": "将旧的安全上下文片段折叠为摘要，保留完整转录记录。"},
-    {"name": "/agents", "usage": "/agents", "description": "???????? Agent?"},
-    {"name": "/agents", "usage": "/agents <name>", "description": "????? Agent ??????"},
-    {"name": "/sandbox", "usage": "/sandbox", "description": "?????????"},
-    {"name": "/sandbox", "usage": "/sandbox on|off", "description": "????????????????"},
-    {"name": "/sandbox", "usage": "/sandbox image", "description": "?????????"},
-    {"name": "/sandbox", "usage": "/sandbox image <image>", "description": "???????"},
+    {"name": "/agents", "usage": "/agents", "description": "列出所有可用的子 Agent。"},
+    {"name": "/agents", "usage": "/agents <name>", "description": "查看指定子 Agent 的详细配置。"},
+    {"name": "/sandbox", "usage": "/sandbox", "description": "查看当前沙箱状态。"},
+    {"name": "/sandbox", "usage": "/sandbox on|off", "description": "启用或禁用沙箱（需要重启生效）。"},
+    {"name": "/sandbox", "usage": "/sandbox image", "description": "查看当前沙箱镜像。"},
+    {"name": "/sandbox", "usage": "/sandbox image <image>", "description": "设置沙箱镜像。"},
     {"name": "/snip", "usage": "/snip", "description": "不调用模型，移除可安全裁剪的中间上下文片段。"},
 ]
 
@@ -472,6 +472,40 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
             return f"current model: {runtime.get('model')}"
         except Exception as error:
             return f"model unavailable: {error}"
+    if input_text == "/agents":
+        from .agents import list_agents
+        agents = list_agents()
+        if not agents:
+            return "No sub-agents available. Create agent configs in ~/.tinycoder/agents/ or .tinycoder/agents/."
+        lines = ["Available sub-agents:"]
+        for a in agents:
+            level_tag = f"[{a.level}]" if a.level != "builtin" else "[builtin]"
+            tools_str = ", ".join(a.tools[:4])
+            if len(a.tools) > 4:
+                tools_str += f" +{len(a.tools) - 4} more"
+            tool_info = f"  tools: {tools_str}" if a.tools else "  tools: all"
+            lines.append(f"\n{a.name} {level_tag}  {a.description}{tool_info}")
+        return "".join(lines)
+
+    if input_text.startswith("/agents "):
+        from .agents import load_agent
+        name = input_text[len("/agents "):].strip()
+        if not name:
+            return "usage: /agents [name]"
+        config = load_agent(name)
+        if config is None:
+            return f"Agent '{name}' not found."
+        return (
+            f"Agent: {config.name} [{config.level}]\n"
+            f"Description: {config.description}\n"
+            f"Model: {config.model}\n"
+            f"Max turns: {config.max_turns}\n"
+            f"Allowed tools: {', '.join(config.tools) if config.tools else 'all'}\n"
+            f"Disallowed: {', '.join(config.disallowed_tools) if config.disallowed_tools else 'none'}\n"
+            f"File: {config.file_path}\n\n"
+            f"--- System Prompt ---\n{config.system_prompt[:500]}"
+        )
+
     if input_text == "/sandbox":
         provider = await _current_provider()
         sandbox_enabled = os.environ.get("TINYCODER_SANDBOX", "").strip().lower() in ("1", "true")

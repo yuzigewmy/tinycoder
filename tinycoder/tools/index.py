@@ -15,6 +15,7 @@ from .patch_file import patch_file_tool
 from .read_file import read_file_tool
 from .run_command import run_command_tool
 from ..agents.task_tool import task_tool
+from ..agents.tools.task_tools import task_create_tool, task_list_tool, task_update_tool
 from .web_fetch import web_fetch_tool
 from .web_search import web_search_tool
 from .write_file import write_file_tool
@@ -58,6 +59,9 @@ async def create_default_tool_registry(args: dict[str, Any]) -> ToolRegistry:
         edit_file_tool,
         patch_file_tool,
         task_tool,
+        task_create_tool,
+        task_list_tool,
+        task_update_tool,
         run_command_tool,
         create_load_skill_tool(cwd),
         web_fetch_tool,

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import os
+
 from .config import (
     CLAUDE_SETTINGS_PATH,
     TINYCODER_MCP_PATH,
@@ -102,6 +104,10 @@ SLASH_COMMANDS: list[dict[str, str]] = [
     {"name": "/cmd", "usage": "/cmd [cwd::]<command> [args...]", "description": "执行允许的开发命令，可指定工作目录。"},
     {"name": "/compact", "usage": "/compact", "description": "压缩对话上下文，释放上下文窗口。"},
     {"name": "/collapse", "usage": "/collapse", "description": "将旧的安全上下文片段折叠为摘要，保留完整转录记录。"},
+    {"name": "/sandbox", "usage": "/sandbox", "description": "?????????"},
+    {"name": "/sandbox", "usage": "/sandbox on|off", "description": "????????????????"},
+    {"name": "/sandbox", "usage": "/sandbox image", "description": "?????????"},
+    {"name": "/sandbox", "usage": "/sandbox image <image>", "description": "???????"},
     {"name": "/snip", "usage": "/snip", "description": "不调用模型，移除可安全裁剪的中间上下文片段。"},
 ]
 
@@ -464,6 +470,49 @@ async def try_handle_local_command(input_text: str, context: dict[str, Any] | No
             return f"current model: {runtime.get('model')}"
         except Exception as error:
             return f"model unavailable: {error}"
+    if input_text == "/sandbox":
+        provider = await _current_provider()
+        sandbox_enabled = os.environ.get("TINYCODER_SANDBOX", "").strip().lower() in ("1", "true")
+        settings = await load_tinycoder_settings()
+        tools_cfg = settings.get("tools") or {}
+        sandbox_cfg = tools_cfg.get("sandbox")
+        sandbox_image_cfg = tools_cfg.get("sandboxImage") or "default"
+        status = "enabled" if sandbox_enabled or sandbox_cfg else "disabled"
+        return f"sandbox: {status}\nsandbox image: {sandbox_image_cfg}\nconfigured in: {TINYCODER_SETTINGS_PATH}"
+
+    if input_text.startswith("/sandbox "):
+        parts = input_text[len("/sandbox "):].strip().split(maxsplit=1)
+        if not parts:
+            return "usage: /sandbox <on|off|image> [image-name]"
+        subcmd = parts[0].lower()
+        if subcmd in ("on", "1", "true", "enable"):
+            settings = await load_tinycoder_settings()
+            tools_cfg = dict(settings.get("tools") or {})
+            tools_cfg["sandbox"] = True
+            await save_tinycoder_settings({"tools": tools_cfg})
+            return "sandbox enabled; restart TinyCoder with --sandbox or set TINYCODER_SANDBOX=true to take effect"
+        elif subcmd in ("off", "0", "false", "disable"):
+            settings = await load_tinycoder_settings()
+            tools_cfg = dict(settings.get("tools") or {})
+            tools_cfg["sandbox"] = False
+            await save_tinycoder_settings({"tools": tools_cfg})
+            return "sandbox disabled; restart TinyCoder to take effect"
+        elif subcmd == "image":
+            if len(parts) > 1:
+                image_name = parts[1]
+                settings = await load_tinycoder_settings()
+                tools_cfg = dict(settings.get("tools") or {})
+                tools_cfg["sandboxImage"] = image_name
+                await save_tinycoder_settings({"tools": tools_cfg})
+                return f"sandbox image set to: {image_name}\nrestart with --sandbox to use this image"
+            else:
+                settings = await load_tinycoder_settings()
+                tools_cfg = settings.get("tools") or {}
+                image = tools_cfg.get("sandboxImage") or "default (tinycoder/tinycoder-sandbox:latest)"
+                return f"sandbox image: {image}"
+        else:
+            return "usage: /sandbox <on|off|image> [image-name]"
+
     if input_text.startswith("/model "):
         model = input_text[len("/model "):].strip()
         if not model:

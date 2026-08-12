@@ -432,21 +432,21 @@ def _read_interactive_line_windows_fallback(prompt: str, history_entries: list[s
         "P": "down",
         "S": "delete",
     }
+    rest = ""
 
     def read_event() -> dict[str, Any]:
-        char = msvcrt.getwch()
-        if char in {"\x00", "\xe0"}:
-            name = extended_keys.get(msvcrt.getwch())
-            return {"kind": "key", "name": name} if name else {"kind": "unknown"}
-        if char in {"\r", "\n"}:
-            return {"kind": "key", "name": "return"}
-        if char == "\u0003":
-            return {"kind": "key", "name": "interrupt"}
-        if char == "\t":
-            return {"kind": "key", "name": "tab"}
-        if char in {"\b", "\x7f"}:
-            return {"kind": "key", "name": "backspace"}
-        return {"kind": "text", "text": char} if char >= " " else {"kind": "unknown"}
+        nonlocal rest
+        while True:
+            char = msvcrt.getwch()
+            if char in {"\x00", "\xe0"}:
+                name = extended_keys.get(msvcrt.getwch())
+                return {"kind": "key", "name": name} if name else {"kind": "unknown"}
+
+            parsed = parse_input_chunk(rest, char)
+            rest = parsed["rest"]
+            events = parsed["events"]
+            if events:
+                return events[0]
 
     return _run_line_editor(editor, renderer, history_state, read_event)
 

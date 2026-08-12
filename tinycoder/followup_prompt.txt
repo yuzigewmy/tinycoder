@@ -1,0 +1,110 @@
+[SUGGESTION MODE: Suggest what the user might naturally type next.]
+
+FIRST: Read the LAST FEW LINES of the assistant's most recent message -- that's where
+next-step hints, tips, and actionable suggestions usually appear. Then check the user's
+recent messages and original request.
+
+Your job is to predict what THEY would type - not what you think they should do.
+
+THE TEST: Would they think "I was just about to type that"?
+
+PRIORITY: If the assistant's last message contains a tip or hint like "Tip: type X to ..."
+or "type X to ...", extract X as the suggestion. These are explicit next-step hints.
+
+EXAMPLES:
+Assistant says "Tip: type post comments to publish findings" → "post comments"
+Assistant says "type /review to start" → "/review"
+User asked "fix the bug and run tests", bug is fixed → "run the tests"
+After code written → "try it out"
+Model offers options → suggest the one the user would likely pick, based on conversation
+Model asks to continue → "yes" or "go ahead"
+Task complete, obvious follow-up → "commit this" or "push it"
+After error or misunderstanding → silence (let them assess/correct)
+
+Be specific: "run the tests" beats "continue".
+
+NEVER SUGGEST:
+- Evaluative ("looks good", "thanks")
+- Questions ("what about...?")
+- AI-voice ("Let me...", "I'll...", "Here's...")
+- New ideas they didn't ask about
+- Multiple sentences
+
+Stay silent if the next step isn't obvious from what the user said.
+
+Format: 2-12 words, match the user's style. Or nothing.
+
+Reply with ONLY the suggestion, no quotes or explanation.`;
+
+/**
+ * JSON schema for the suggestion response.
+ */
+const SUGGESTION_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    suggestion: {
+      type: 'string',
+      description:
+        'The predicted next user input (2-12 words), or empty string if nothing obvious.',
+    },
+  },
+  required: ['suggestion'],
+};
+
+/** Minimum assistant turns before generating suggestions */
+const MIN_ASSISTANT_TURNS = 2;
+
+/**
+ * Generate a prompt suggestion using an LLM call.
+ *
+ * @param config - App config (provides BaseLlmClient and model)
+ * @param conversationHistory - Full conversation history as Content[]
+ * @param abortSignal - Signal to cancel the LLM call (e.g., when user types)
+ * @returns Object with suggestion text and optional filter reason, or null on error/early skip
+ */
+export async function generatePromptSuggestion(
+  config: Config,
+  conversationHistory: Content[],
+  abortSignal: AbortSignal,
+  options?: { enableCacheSharing?: boolean; model?: string },
+): Promise<{ suggestion: string | null; filterReason?: string }> {
+  // Don't suggest in very early conversations
+  const modelTurns = conversationHistory.filter(
+    (c) => c.role === 'model',
+  ).length;
+  if (modelTurns < MIN_ASSISTANT_TURNS) {
+    return { suggestion: null, filterReason: 'early_conversation' };
+  }
+
+  try {
+    // Try cache-aware forked query if enabled and params available
+    const cacheSafe = options?.enableCacheSharing ? getCacheSafeParams() : null;
+    const modelOverride = options?.model;
+    debugLogger.debug(
+      `Generating suggestion: cacheSharing=${!!cacheSafe}, model=${modelOverride || '(default)'}`,
+    );
+    const raw = cacheSafe
+      ? await generateViaForkedQuery(config, abortSignal, modelOverride)
+      : await generateViaBaseLlm(
+          config,
+          conversationHistory,
+          abortSignal,
+          modelOverride,
+        );
+
+    const suggestion = typeof raw === 'string' ? raw.trim() : null;
+
+    if (!suggestion) {
+      debugLogger.debug('Suggestion generation returned empty result');
+      return { suggestion: null, filterReason: 'empty' };
+    }
+
+    const filterReason = getFilterReason(suggestion);
+    if (filterReason) {
+      debugLogger.debug(
+        `Suggestion filtered: reason=${filterReason}, text="${suggestion}"`,
+      );
+      return { suggestion: null, filterReason };
+    }
+
+    debugLogger.debug(`Suggestion accepted: "${suggestion}"

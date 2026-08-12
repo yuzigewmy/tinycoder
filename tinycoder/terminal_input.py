@@ -28,6 +28,18 @@ def terminal_size() -> tuple[int, int]:
     return max(1, size.columns), max(1, size.lines)
 
 
+def _windows_console_input_mode(old_input_mode: int) -> int:
+    enable_extended_flags = 0x0080
+    enable_quick_edit_mode = 0x0040
+    enable_window_input = 0x0008
+    enable_mouse_input = 0x0010
+    return (
+        old_input_mode
+        | enable_extended_flags
+        | enable_window_input
+    ) & ~(enable_quick_edit_mode | enable_mouse_input)
+
+
 def query_posix_cursor_position(
     stdin: TextIO,
     stdout: TextIO,
@@ -228,19 +240,10 @@ class WindowsConsoleInput:
         if not kernel32.GetConsoleMode(output_handle, ctypes.byref(old_output_mode)):
             raise OSError(ctypes.get_last_error(), "stdout is not a Windows console")
 
-        enable_extended_flags = 0x0080
-        enable_quick_edit_mode = 0x0040
-        enable_window_input = 0x0008
-        enable_mouse_input = 0x0010
         enable_virtual_terminal_processing = 0x0004
-        input_mode = (
-            old_input_mode.value
-            | enable_extended_flags
-            | enable_window_input
-            | enable_mouse_input
-        ) & ~enable_quick_edit_mode
+        input_mode = _windows_console_input_mode(old_input_mode.value)
         if not kernel32.SetConsoleMode(input_handle, input_mode):
-            raise OSError(ctypes.get_last_error(), "could not enable console mouse input")
+            raise OSError(ctypes.get_last_error(), "could not configure console input")
         if not kernel32.SetConsoleMode(
             output_handle,
             old_output_mode.value | enable_virtual_terminal_processing,

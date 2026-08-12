@@ -1,4 +1,4 @@
-﻿"""Sandbox configuration — mirrors qwen-code sandboxConfig.ts.
+"""Sandbox configuration — mirrors qwen-code sandboxConfig.ts.
 
 Resolves the sandbox command (docker / podman) and image from:
 1. TINYCODER_SANDBOX env var (highest precedence)

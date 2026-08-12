@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+import sys
 import unittest
 from io import StringIO
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from tinycoder.line_editor import LineEditor, text_display_width
-from tinycoder.terminal_input import PromptRenderer, TerminalGeometry
-from tinycoder.tty_app import _apply_editor_event, _history_candidates
+from tinycoder.terminal_input import (
+    PromptRenderer,
+    TerminalGeometry,
+    _windows_console_input_mode,
+)
+from tinycoder.tty_app import (
+    _apply_editor_event,
+    _history_candidates,
+    _read_interactive_line_windows_fallback,
+)
 from tinycoder.tui.input_parser import parse_input_chunk
 
 
@@ -133,6 +144,22 @@ class TerminalInputParserTests(unittest.TestCase):
             ],
         )
         self.assertEqual(parsed["rest"], "")
+
+    def test_windows_console_input_leaves_mouse_events_to_the_host(self) -> None:
+        mode = _windows_console_input_mode(0xFFFF)
+
+        self.assertEqual(mode & 0x0010, 0)
+        self.assertNotEqual(mode & 0x0008, 0)
+
+    def test_windows_pseudoterminal_ignores_ansi_mouse_sequences(self) -> None:
+        input_sequence = "\u001b[<35;5;6M\u001b[<64;5;6Mhello\r"
+        input_chars = iter(input_sequence)
+        fake_msvcrt = SimpleNamespace(getwch=lambda: next(input_chars))
+
+        with patch.dict(sys.modules, {"msvcrt": fake_msvcrt}):
+            result = _read_interactive_line_windows_fallback("> ", [])
+
+        self.assertEqual(result, "hello")
 
 
 class TtyEditorIntegrationTests(unittest.TestCase):
